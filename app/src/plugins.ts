@@ -1,12 +1,14 @@
-import * as fs from 'mz/fs'
-import * as path from 'path'
-import * as remote from '@electron/remote'
 import { PluginInfo } from '../../tabby-core/src/api/mainProcess'
 import { PLUGIN_BLACKLIST } from './pluginBlacklist'
 
-const nodeModule = require('module') // eslint-disable-line @typescript-eslint/no-var-requires
-
-const nodeRequire = global['require']
+// Node.js require is only available in non-sandboxed contexts (e.g. nodeIntegration:true dev builds).
+// In the sandboxed renderer, this returns null for everything, and all plugin loading falls back
+// to the webpack-bundled cachedBuiltinModules below.
+function _require(mod: string): any {
+    const nr: ((m: string) => any) | undefined = (global as any)['require']
+    if (!nr) return null
+    try { return nr(mod) } catch { return null }
+}
 
 function normalizePath (p: string): string {
     const cygwinPrefix = '/cygdrive/'
@@ -17,9 +19,19 @@ function normalizePath (p: string): string {
     return p
 }
 
-const builtinPluginsPath = process.env.TABBY_DEV ? path.dirname(remote.app.getAppPath()) : path.join((process as any).resourcesPath, 'builtin-plugins')
+function getBuiltinPluginsPath(): string {
+    const tabbyAPI = (window as any).tabbyAPI
+    const path = _require('path')
+    if (tabbyAPI?.devMode) {
+        return path ? path.dirname(tabbyAPI?.appPath ?? '') : ''
+    }
+    return path ? path.join(tabbyAPI?.resourcesPath ?? '', 'builtin-plugins') : ''
+}
 
-const cachedBuiltinModules = {
+// Webpack-bundled copies of shared Angular + tabby modules.
+// These are served to dynamically-loaded plugins via the patched require() below,
+// and are also used as a fallback when Node.js require is unavailable (sandboxed renderer).
+const cachedBuiltinModules: Record<string, any> = {
     '@angular/animations': require('@angular/animations'),
     '@angular/cdk/drag-drop': require('@angular/cdk/drag-drop'),
     '@angular/cdk/clipboard': require('@angular/cdk/clipboard'),
@@ -40,63 +52,101 @@ const cachedBuiltinModules = {
     'zone.js': require('zone.js'),
 }
 
+// Tabby built-in plugin packages bundled via webpack for the sandboxed renderer.
+// Each must be a string literal so webpack can statically resolve and bundle the module.
+// Try-catch isolates failures: the compiled UMD dist files call require("os") etc. at
+// module scope, which throws in the sandboxed renderer — caught here so the rest of the
+// app still loads. Failed packages are excluded from BUNDLED_BUILTIN_PLUGINS below.
+try { cachedBuiltinModules['tabby-core'] = require('tabby-core') } catch (e) { console.warn('[plugins] Could not pre-load tabby-core:', e) } // eslint-disable-line
+try { cachedBuiltinModules['tabby-settings'] = require('tabby-settings') } catch (e) { console.warn('[plugins] Could not pre-load tabby-settings:', e) } // eslint-disable-line
+try { cachedBuiltinModules['tabby-terminal'] = require('tabby-terminal') } catch (e) { console.warn('[plugins] Could not pre-load tabby-terminal:', e) } // eslint-disable-line
+try { cachedBuiltinModules['tabby-local'] = require('tabby-local') } catch (e) { console.warn('[plugins] Could not pre-load tabby-local:', e) } // eslint-disable-line
+try { cachedBuiltinModules['tabby-electron'] = require('tabby-electron') } catch (e) { console.warn('[plugins] Could not pre-load tabby-electron:', e) } // eslint-disable-line
+
+// Derived from what actually loaded above — used by findPlugins() in sandboxed mode.
+const BUNDLED_BUILTIN_PLUGINS = ['tabby-core', 'tabby-settings', 'tabby-terminal', 'tabby-local', 'tabby-electron']
+    .filter(name => !!cachedBuiltinModules[name])
+
 const builtinModules = [
     ...Object.keys(cachedBuiltinModules),
     'tabby-core',
+    'tabby-electron',
     'tabby-local',
     'tabby-settings',
     'tabby-terminal',
 ]
 
+// Intercept global.require (only available with nodeIntegration:true) to transparently serve
+// bundled versions of shared modules so dynamically-loaded plugins don't double-bundle them.
 const originalRequire = (global as any).require
-;(global as any).require = function (query: string) {
-    if (cachedBuiltinModules[query]) {
-        return cachedBuiltinModules[query]
+if (originalRequire) {
+    ;(global as any).require = function (query: string) {
+        if (cachedBuiltinModules[query]) {
+            return cachedBuiltinModules[query]
+        }
+        return originalRequire.apply(this, [query])
     }
-    return originalRequire.apply(this, [query])
-}
 
-const originalModuleRequire = nodeModule.prototype.require
-nodeModule.prototype.require = function (query: string) {
-    if (cachedBuiltinModules[query]) {
-        return cachedBuiltinModules[query]
+    const nodeModule = _require('module')
+    if (nodeModule) {
+        const originalModuleRequire = nodeModule.prototype.require
+        nodeModule.prototype.require = function (query: string) {
+            if (cachedBuiltinModules[query]) {
+                return cachedBuiltinModules[query]
+            }
+            return originalModuleRequire.call(this, query)
+        }
     }
-    return originalModuleRequire.call(this, query)
 }
 
 export type ProgressCallback = (current: number, total: number) => void
 
 export function initModuleLookup (userPluginsPath: string): void {
+    const nodeModule = _require('module')
+    if (!nodeModule) return
+
+    const path = _require('path')
+    if (!path) return
+
+    const tabbyAPI = (window as any).tabbyAPI
+    const builtinPluginsPath = getBuiltinPluginsPath()
+    const nodeRequire: ((m: string) => any) | undefined = (global as any)['require']
+
     global['module'].paths.map((x: string) => nodeModule.globalPaths.push(normalizePath(x)))
 
     const paths = []
     paths.unshift(path.join(userPluginsPath, 'node_modules'))
-    paths.unshift(path.join(remote.app.getAppPath(), 'node_modules'))
+    paths.unshift(path.join(tabbyAPI.appPath, 'node_modules'))
 
-    if (process.env.TABBY_DEV) {
-        paths.unshift(path.dirname(remote.app.getAppPath()))
+    if (tabbyAPI?.devMode) {
+        paths.unshift(path.dirname(tabbyAPI.appPath))
     }
 
     paths.unshift(builtinPluginsPath)
-    // paths.unshift(path.join((process as any).resourcesPath, 'app.asar', 'node_modules'))
-    if (process.env.TABBY_PLUGINS) {
-        process.env.TABBY_PLUGINS.split(':').map(x => paths.push(normalizePath(x)))
+    if (tabbyAPI?.tabbyPlugins) {
+        tabbyAPI.tabbyPlugins.split(':').map(x => paths.push(normalizePath(x)))
     }
 
     process.env.NODE_PATH += path.delimiter + paths.join(path.delimiter)
     nodeModule._initPaths()
 
-    builtinModules.forEach(m => {
-        if (!cachedBuiltinModules[m]) {
-            cachedBuiltinModules[m] = nodeRequire(m)
-        }
-    })
+    if (nodeRequire) {
+        builtinModules.forEach(m => {
+            if (!cachedBuiltinModules[m]) {
+                cachedBuiltinModules[m] = nodeRequire(m)
+            }
+        })
+    }
 }
 
 const PLUGIN_PREFIX = 'tabby-'
 const LEGACY_PLUGIN_PREFIX = 'terminus-'
 
 async function getCandidateLocationsInPluginDir (pluginDir: any): Promise<{ pluginDir: string, packageName: string }[]> {
+    const fs = _require('mz/fs')
+    const path = _require('path')
+    if (!fs || !path) return []
+
     const candidateLocations: { pluginDir: string, packageName: string }[] = []
 
     if (await fs.exists(pluginDir)) {
@@ -154,6 +204,11 @@ async function getPluginCandidateLocation (paths: any): Promise<{ pluginDir: str
 }
 
 async function parsePluginInfo (pluginDir: string, packageName: string): Promise<PluginInfo|null> {
+    const fs = _require('mz/fs')
+    const path = _require('path')
+    if (!fs || !path) return null
+
+    const builtinPluginsPath = getBuiltinPluginsPath()
     const pluginPath = path.join(pluginDir, packageName)
     const infoPath = path.join(pluginPath, 'package.json')
 
@@ -189,11 +244,31 @@ async function parsePluginInfo (pluginDir: string, packageName: string): Promise
 }
 
 export async function findPlugins (): Promise<PluginInfo[]> {
+    const nodeModule = _require('module')
+    const nodeRequire: ((m: string) => any) | undefined = (global as any)['require']
+
+    // Sandboxed renderer: no Node.js require available.
+    // Return the webpack-bundled built-ins so Angular can bootstrap.
+    if (!nodeRequire || !nodeModule) {
+        return BUNDLED_BUILTIN_PLUGINS.map(packageName => ({
+            name: packageName.replace(PLUGIN_PREFIX, ''),
+            packageName,
+            isBuiltin: true,
+            isLegacy: false,
+            version: '0.0.0',
+            description: '',
+            author: '',
+            path: packageName,
+            info: {},
+        }))
+    }
+
     const paths = nodeModule.globalPaths
     let foundPlugins: PluginInfo[] = []
 
     const candidateLocations: { pluginDir: string, packageName: string }[] = await getPluginCandidateLocation(paths)
 
+    const builtinPluginsPath = getBuiltinPluginsPath()
     const foundPluginsPromises: Promise<PluginInfo|null>[] = []
     for (const { pluginDir, packageName } of candidateLocations) {
 
@@ -227,6 +302,8 @@ export async function findPlugins (): Promise<PluginInfo[]> {
 }
 
 export async function loadPlugins (foundPlugins: PluginInfo[], progress: ProgressCallback): Promise<any[]> {
+    const nodeRequire: ((m: string) => any) | undefined = (global as any)['require']
+
     const plugins: any[] = []
     const pluginsPromises: Promise<any>[] = []
 
@@ -239,19 +316,34 @@ export async function loadPlugins (foundPlugins: PluginInfo[], progress: Progres
     progress(0, 1)
     for (const foundPlugin of foundPlugins) {
         pluginsPromises.push(new Promise(x => {
-            console.info(`Loading ${foundPlugin.name}: ${nodeRequire.resolve(foundPlugin.path)}`)
-            try {
-                const packageModule = nodeRequire(foundPlugin.path)
-                if (foundPlugin.packageName.startsWith('tabby-')) {
-                    cachedBuiltinModules[foundPlugin.packageName.replace('tabby-', 'terminus-')] = packageModule
+            // Prefer webpack-bundled cache; fall back to Node.js require for user-installed plugins.
+            const packageModule = cachedBuiltinModules[foundPlugin.packageName]
+                ?? (nodeRequire ? (() => {
+                    try {
+                        console.info(`Loading ${foundPlugin.name}: ${(nodeRequire as any).resolve(foundPlugin.path)}`)
+                        return nodeRequire(foundPlugin.path)
+                    } catch (error) {
+                        console.error(`Could not load ${foundPlugin.name}:`, error)
+                        return null
+                    }
+                })() : null)
+
+            if (packageModule) {
+                try {
+                    if (foundPlugin.packageName.startsWith('tabby-')) {
+                        cachedBuiltinModules[foundPlugin.packageName.replace('tabby-', 'terminus-')] = packageModule
+                    }
+                    const pluginModule = packageModule.default?.forRoot ? packageModule.default.forRoot() : packageModule.default
+                    pluginModule.pluginName = foundPlugin.name
+                    pluginModule.bootstrap = packageModule.bootstrap
+                    plugins.push(pluginModule)
+                } catch (error) {
+                    console.error(`Could not initialise ${foundPlugin.name}:`, error)
                 }
-                const pluginModule = packageModule.default.forRoot ? packageModule.default.forRoot() : packageModule.default
-                pluginModule.pluginName = foundPlugin.name
-                pluginModule.bootstrap = packageModule.bootstrap
-                plugins.push(pluginModule)
-            } catch (error) {
-                console.error(`Could not load ${foundPlugin.name}:`, error)
+            } else {
+                console.warn(`Skipping ${foundPlugin.name}: module not available`)
             }
+
             setProgress()
             setTimeout(x, 50)
         }))

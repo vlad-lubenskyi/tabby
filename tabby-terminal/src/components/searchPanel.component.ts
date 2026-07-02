@@ -1,3 +1,4 @@
+declare const require: (module: string) => any
 import { Component, Input, Output, EventEmitter } from '@angular/core'
 import { Subject, debounceTime } from 'rxjs'
 import { Frontend, SearchOptions, SearchState } from '../frontends/frontend'

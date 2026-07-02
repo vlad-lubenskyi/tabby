@@ -1,12 +1,12 @@
-import * as path from 'path'
-import * as fs from 'fs/promises'
-import * as which from 'which'
+declare const require: (module: string) => any
 import { Injectable } from '@angular/core'
 import { HostAppService, Platform, ConfigService } from 'tabby-core'
 import { ElectronService } from '../services/electron.service'
 
 import { Shell } from 'tabby-local'
 import { WindowsBaseShellProvider } from './windowsBase'
+
+const ipc = () => (window as any).tabbyAPI?.ipc
 
 /** @hidden */
 @Injectable()
@@ -24,22 +24,13 @@ export class WindowsStockShellsProvider extends WindowsBaseShellProvider {
             return []
         }
 
-        let clinkPath = path.join(
-            path.dirname(this.electron.app.getPath('exe')),
-            'resources',
-            'extras',
-            'clink',
-            `clink_${process.arch}.exe`,
-        )
+        const exeDir: string = await ipc().invoke('bridge:path:dirname', this.electron.exePath)
+        const arch: string = (window as any).tabbyAPI.arch
 
-        if (process.env.TABBY_DEV) {
-            clinkPath = path.join(
-                path.dirname(this.electron.app.getPath('exe')),
-                '..', '..', '..',
-                'extras',
-                'clink',
-                `clink_${process.arch}.exe`,
-            )
+        let clinkPath = exeDir + '\\resources\\extras\\clink\\clink_' + arch + '.exe'
+
+        if ((window as any).tabbyAPI.devMode) {
+            clinkPath = exeDir + '\\..\\..\\..\\extras\\clink\\clink_' + arch + '.exe'
         }
         return [
             {
@@ -74,25 +65,21 @@ export class WindowsStockShellsProvider extends WindowsBaseShellProvider {
         ]
     }
 
-    private async getPowerShellPath () {
-        // Check well-known paths first to avoid slow PATH scanning via `which`
+    private async getPowerShellPath (): Promise<string> {
+        const env = (window as any).tabbyAPI.env
+        // Check well-known paths first to avoid slow PATH scanning
         for (const psPath of [
-            `${process.env.USERPROFILE}\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe`,
-            `${process.env.ProgramFiles}\\PowerShell\\7\\pwsh.exe`,
-            `${process.env['ProgramFiles(x86)']}\\PowerShell\\7\\pwsh.exe`,
-            `${process.env.SystemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`,
-            `${process.env.SystemRoot}\\System32\\powershell.exe`,
+            (env.USERPROFILE ?? '') + '\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe',
+            (env.ProgramFiles ?? '') + '\\PowerShell\\7\\pwsh.exe',
+            (env['ProgramFiles(x86)'] ?? '') + '\\PowerShell\\7\\pwsh.exe',
+            (env.SystemRoot ?? '') + '\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+            (env.SystemRoot ?? '') + '\\System32\\powershell.exe',
         ]) {
-            try {
-                await fs.stat(psPath)
-                return psPath
-            } catch { }
-        }
-        // Fall back to PATH search only if not found in standard locations
-        for (const name of ['pwsh.exe', 'powershell.exe']) {
-            const found = await which(name, { nothrow: true })
-            if (found) {
-                return found
+            if (!psPath.startsWith('\\')) {
+                try {
+                    await ipc().invoke('bridge:fs:stat', psPath)
+                    return psPath
+                } catch { }
             }
         }
         return 'powershell.exe'

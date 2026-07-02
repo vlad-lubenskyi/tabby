@@ -1,4 +1,3 @@
-import type { BrowserWindow, TouchBar } from 'electron'
 import { Injectable, Inject, NgZone } from '@angular/core'
 import { BootstrapData, BOOTSTRAP_DATA, HostWindowService } from 'tabby-core'
 import { ElectronService } from '../services/electron.service'
@@ -23,65 +22,64 @@ export class ElectronHostWindow extends HostWindowService {
         @Inject(BOOTSTRAP_DATA) private bootstrapData: BootstrapData,
     ) {
         super()
-        electron.ipcRenderer.on('host:window-enter-full-screen', () => zone.run(() => {
+        electron.ipc.on('host:window-enter-full-screen', () => zone.run(() => {
             this._isFullscreen = true
         }))
 
-        electron.ipcRenderer.on('host:window-leave-full-screen', () => zone.run(() => {
+        electron.ipc.on('host:window-leave-full-screen', () => zone.run(() => {
             this._isFullscreen = false
         }))
 
-        electron.ipcRenderer.on('host:window-shown', () => zone.run(() => this.windowShown.next()))
+        electron.ipc.on('host:window-shown', () => zone.run(() => this.windowShown.next()))
 
-        electron.ipcRenderer.on('host:window-close-request', () => zone.run(() => {
+        electron.ipc.on('host:window-close-request', () => zone.run(() => {
             this.windowCloseRequest.next()
         }))
 
-        electron.ipcRenderer.on('host:window-moved', () => zone.run(() => {
+        electron.ipc.on('host:window-moved', () => zone.run(() => {
             this.windowMoved.next()
         }))
 
-        electron.ipcRenderer.on('host:window-focused', () => zone.run(() => {
+        electron.ipc.on('host:window-focused', () => zone.run(() => {
             this.windowFocused.next()
         }))
 
-        electron.ipcRenderer.on('host:became-main-window', () => zone.run(() => {
+        electron.ipc.on('host:became-main-window', () => zone.run(() => {
             this.bootstrapData.isMainWindow = true
         }))
 
-        electron.ipcRenderer.on('host:window-maximized', () => zone.run(() => {
+        electron.ipc.on('host:window-maximized', () => zone.run(() => {
             this._isMaximized = true
         }))
 
-        electron.ipcRenderer.on('host:window-unmaximized', () => zone.run(() => {
+        electron.ipc.on('host:window-unmaximized', () => zone.run(() => {
             this._isMaximized = false
         }))
 
-        this._isMaximized = this.getWindow().isMaximized()
     }
 
-    getWindow (): BrowserWindow {
-        return this.electron.BrowserWindow.fromId(this.bootstrapData.windowID)!
+    getWindow (): any {
+        return null
     }
 
     openDevTools (): void {
-        this.getWindow().webContents.openDevTools({ mode: 'undocked' })
+        this.electron.ipc.send('window-open-dev-tools')
     }
 
     reload (): void {
-        this.getWindow().reload()
+        this.electron.ipc.send('window-reload')
     }
 
     setTitle (title?: string): void {
-        this.electron.ipcRenderer.send('window-set-title', title ?? 'Tabby')
+        this.electron.ipc.send('window-set-title', title ?? 'Tabby')
     }
 
     toggleFullscreen (): void {
-        this.getWindow().setFullScreen(!this._isFullscreen)
+        this.electron.ipc.send('window-toggle-fullscreen')
     }
 
     minimize (): void {
-        this.electron.ipcRenderer.send('window-minimize')
+        this.electron.ipc.send('window-minimize')
     }
 
     isMaximized (): boolean {
@@ -89,42 +87,38 @@ export class ElectronHostWindow extends HostWindowService {
     }
 
     toggleMaximize (): void {
-        if (this.getWindow().isMaximized()) {
-            this.getWindow().unmaximize()
-        } else {
-            this.getWindow().maximize()
-        }
+        this.electron.ipc.send('window-toggle-maximize')
     }
 
     close (): void {
-        this.electron.ipcRenderer.send('window-close')
+        this.electron.ipc.send('window-close')
     }
 
     setBounds (bounds: Bounds): void {
-        this.electron.ipcRenderer.send('window-set-bounds', bounds)
+        this.electron.ipc.send('window-set-bounds', bounds)
     }
 
     setAlwaysOnTop (flag: boolean): void {
-        this.electron.ipcRenderer.send('window-set-always-on-top', flag)
+        this.electron.ipc.send('window-set-always-on-top', flag)
     }
 
-    setTouchBar (touchBar: TouchBar): void {
-        this.getWindow().setTouchBar(touchBar)
+    setTouchBar (_touchBar: any): void {
+        // TouchBar requires main-process BrowserWindow access; bridge not yet implemented
     }
 
     setTrafficLightPosition (x: number, y: number): void {
-        this.electron.ipcRenderer.send('window-set-traffic-light-position', x, y)
+        this.electron.ipc.send('window-set-traffic-light-position', x, y)
     }
 
     setOpacity (opacity: number): void {
-        this.electron.ipcRenderer.send('window-set-opacity', opacity)
+        this.electron.ipc.send('window-set-opacity', opacity)
     }
 
     setProgressBar (value: number): void {
-        this.electron.ipcRenderer.send('window-set-progress-bar', value)
+        this.electron.ipc.send('window-set-progress-bar', value)
     }
 
     bringToFront (): void {
-        this.electron.ipcRenderer.send('window-bring-to-front')
+        this.electron.ipc.send('window-bring-to-front')
     }
 }

@@ -4,7 +4,13 @@ import { HotkeyDescription, HotkeyProvider } from '../api/hotkeyProvider'
 import { KeyEventData, getKeyName, Keystroke, KeyName, getKeystrokeName, metaKeyName, altKeyName } from './hotkeys.util'
 import { ConfigService } from './config.service'
 import { HostAppService, Platform } from '../api/hostApp'
-import { deprecate } from 'util'
+
+function deprecate<T extends (...args: any[]) => any> (fn: T, msg: string): T {
+    return ((...args: any[]) => {
+        console.warn(msg)
+        return fn(...args)
+    }) as T
+}
 
 export interface PartialHotkeyMatch {
     id: string
@@ -83,7 +89,7 @@ export class HotkeysService {
         private zone: NgZone,
         private config: ConfigService,
         @Inject(HotkeyProvider) private hotkeyProviders: HotkeyProvider[],
-        hostApp: HostAppService,
+        private hostApp: HostAppService,
     ) {
         this.config.ready$.toPromise().then(async () => {
             const hotkeys = await this.getHotkeyDescriptions()
@@ -226,7 +232,7 @@ export class HotkeysService {
             this._key.next(getKeyName(eventData))
         })
 
-        if (process.platform === 'darwin' && eventData.metaKey && eventName === 'keydown' && !['Ctrl', 'Shift', altKeyName, metaKeyName, 'Enter'].includes(keyName)) {
+        if (this.hostApp.platform === Platform.macOS && eventData.metaKey && eventName === 'keydown' && !['Ctrl', 'Shift', altKeyName, metaKeyName, 'Enter'].includes(keyName)) {
             // macOS will swallow non-modified keyups if Cmd is held down
             this.pushKeyEvent('keyup', nativeEvent)
         }

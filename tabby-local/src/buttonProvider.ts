@@ -1,3 +1,4 @@
+declare const require: (module: string) => any
 /* eslint-disable @typescript-eslint/explicit-module-boundary-types */
 import { Injectable } from '@angular/core'
 import { ToolbarButtonProvider, ToolbarButton, TranslateService } from 'tabby-core'

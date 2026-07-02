@@ -38,7 +38,7 @@ export default options => {
 
     const isDev = !!process.env.TABBY_DEV
     const config = {
-        target: 'node',
+        target: 'web',
         entry: 'src/index.ts',
         context: options.dirname,
         devtool: false,
@@ -62,6 +62,27 @@ export default options => {
             modules: ['.', 'src', 'node_modules', '../app/node_modules', '../node_modules'].map(x => path.join(options.dirname, x)),
             extensions: ['.ts', '.js'],
             mainFields: ['esm2015', 'browser', 'module', 'main'],
+            // Node.js built-ins used by transitive dependencies (e.g. hexer→util) that are
+            // not in the externals list.  false = inline empty {} stub; no runtime require()
+            // call is emitted, so the app-side renderer sandbox is not affected.
+            fallback: {
+                assert: false,
+                buffer: false,
+                constants: false,
+                crypto: false,
+                dns: false,
+                domain: false,
+                events: false,
+                http: false,
+                https: false,
+                punycode: false,
+                querystring: false,
+                tls: false,
+                tty: false,
+                url: false,
+                util: false,
+                zlib: false,
+            },
         },
         ignoreWarnings: [/Failed to parse source map/],
         module: {
@@ -149,6 +170,7 @@ export default options => {
             'electron',
             'fontmanager-redux',
             'fs',
+            'fs/promises',
             'keytar',
             'macos-native-processlist',
             'native-process-working-directory',

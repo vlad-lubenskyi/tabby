@@ -11,16 +11,16 @@ export class InputProcessor extends SessionMiddleware {
         super()
     }
 
-    feedFromTerminal (data: Buffer): void {
+    feedFromTerminal (data: Uint8Array): void {
         if (data.length === 1 && data[0] === 0x7f) {
             if (this.options.backspace === 'ctrl-h') {
-                data = Buffer.from('\x08')
+                data = new Uint8Array([0x08])
             } else if (this.options.backspace === 'ctrl-?') {
-                data = Buffer.from('\x7f')
+                data = new Uint8Array([0x7f])
             } else if (this.options.backspace === 'delete') {
-                data = Buffer.from('\x1b[3~')
+                data = new TextEncoder().encode('\x1b[3~')
             } else {
-                data = Buffer.from('\x7f')
+                data = new Uint8Array([0x7f])
             }
         }
         this.outputToSession.next(data)

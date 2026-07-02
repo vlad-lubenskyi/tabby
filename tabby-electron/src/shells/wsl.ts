@@ -1,4 +1,4 @@
-import * as fs from 'mz/fs'
+declare const require: (module: string) => any
 import slugify from 'slugify'
 
 import { Injectable } from '@angular/core'
@@ -35,6 +35,8 @@ const wslIconMap: Record<string, string> = {
 }
 /* eslint-enable quote-props */
 
+const ipc = () => (window as any).tabbyAPI?.ipc
+
 /** @hidden */
 @Injectable()
 export class WSLShellProvider extends ShellProvider {
@@ -49,8 +51,9 @@ export class WSLShellProvider extends ShellProvider {
             return []
         }
 
-        const bashPath = `${process.env.windir}\\system32\\bash.exe`
-        const wslPath = `${process.env.windir}\\system32\\wsl.exe`
+        const windir: string = (window as any).tabbyAPI.env.windir ?? 'C:\\Windows'
+        const bashPath = windir + '\\system32\\bash.exe'
+        const wslPath = windir + '\\system32\\wsl.exe'
 
         const lxssPath = 'Software\\Microsoft\\Windows\\CurrentVersion\\Lxss'
         const lxss = wnr.getRegistryKey(wnr.HK.CU, lxssPath)
@@ -76,7 +79,8 @@ export class WSLShellProvider extends ShellProvider {
         }
 
         if (!lxss?.DefaultDistribution || !isWindowsBuild(WIN_BUILD_WSL_EXE_DISTRO_FLAG)) {
-            if (await fs.exists(bashPath)) {
+            const bashExists: boolean = await ipc().invoke('bridge:fs:exists', bashPath)
+            if (bashExists) {
                 return [{
                     id: 'wsl',
                     name: 'WSL / Bash on Windows',

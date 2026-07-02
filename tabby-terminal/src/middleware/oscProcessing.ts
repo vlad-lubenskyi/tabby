@@ -1,30 +1,50 @@
-import * as os from 'os'
 import { Subject, Observable } from 'rxjs'
 import { SessionMiddleware } from '../api/middleware'
 
-const OSCPrefix = Buffer.from('\x1b]')
-const OSCSuffixes = [Buffer.from('\x07'), Buffer.from('\x1b\\')]
+const OSCPrefix = new Uint8Array([0x1b, 0x5d])           // ESC ]
+const OSCSuffixes = [new Uint8Array([0x07]), new Uint8Array([0x1b, 0x5c])] // BEL, ESC \
+
+function indexOfPattern (haystack: Uint8Array, needle: Uint8Array, fromIndex = 0): number {
+    if (needle.length === 0) return fromIndex
+    outer: for (let i = fromIndex; i <= haystack.length - needle.length; i++) {
+        for (let j = 0; j < needle.length; j++) {
+            if (haystack[i + j] !== needle[j]) continue outer
+        }
+        return i
+    }
+    return -1
+}
+
+function concatUint8 (...arrays: Uint8Array[]): Uint8Array {
+    const total = arrays.reduce((n, a) => n + a.length, 0)
+    const result = new Uint8Array(total)
+    let offset = 0
+    for (const a of arrays) { result.set(a, offset); offset += a.length }
+    return result
+}
+
+const _dec = new TextDecoder()
 
 export class OSCProcessor extends SessionMiddleware {
     get cwdReported$ (): Observable<string> { return this.cwdReported }
     get copyRequested$ (): Observable<string> { return this.copyRequested }
 
     private cwdReported = new Subject<string>()
-    private buffer: Buffer | null = null
+    private buffer: Uint8Array | null = null
     private copyRequested = new Subject<string>()
 
-    feedFromSession (data: Buffer): void {
+    feedFromSession (data: Uint8Array): void {
         // Prepend any buffered data from previous chunks
         if (this.buffer) {
-            data = Buffer.concat([this.buffer, data])
+            data = concatUint8(this.buffer, data)
             this.buffer = null
         }
 
         let startIndex = 0
-        const processedData: Buffer[] = []
+        const processedData: Uint8Array[] = []
 
         while (startIndex < data.length) {
-            const prefixIndex = data.indexOf(OSCPrefix, startIndex)
+            const prefixIndex = indexOfPattern(data, OSCPrefix, startIndex)
 
             if (prefixIndex === -1) {
                 // No more OSC sequences, pass remaining data
@@ -41,10 +61,10 @@ export class OSCProcessor extends SessionMiddleware {
 
             // Look for suffix after the prefix
             const suffixSearchStart = prefixIndex + OSCPrefix.length
-            let foundSuffix: [Buffer, number] | null = null
+            let foundSuffix: [Uint8Array, number] | null = null
 
             for (const suffix of OSCSuffixes) {
-                const suffixIndex = data.indexOf(suffix, suffixSearchStart)
+                const suffixIndex = indexOfPattern(data, suffix, suffixSearchStart)
                 if (suffixIndex !== -1) {
                     if (!foundSuffix || suffixIndex < foundSuffix[1]) {
                         foundSuffix = [suffix, suffixIndex]
@@ -59,7 +79,7 @@ export class OSCProcessor extends SessionMiddleware {
             }
 
             // Extract OSC string (between prefix and suffix)
-            const oscString = data.subarray(suffixSearchStart, foundSuffix[1]).toString()
+            const oscString = _dec.decode(data.subarray(suffixSearchStart, foundSuffix[1]))
             const [oscCodeString, ...oscParams] = oscString.split(';')
             const oscCode = parseInt(oscCodeString)
 
@@ -68,7 +88,8 @@ export class OSCProcessor extends SessionMiddleware {
                 if (paramString.startsWith('CurrentDir=')) {
                     let reportedCWD = paramString.split('=', 2)[1]
                     if (reportedCWD.startsWith('~')) {
-                        reportedCWD = os.homedir() + reportedCWD.substring(1)
+                        const homeDir = (window as any).tabbyAPI?.env?.HOME ?? (window as any).tabbyAPI?.env?.USERPROFILE ?? '~'
+                        reportedCWD = homeDir + reportedCWD.substring(1)
                     }
                     this.cwdReported.next(reportedCWD)
                 } else {
@@ -76,8 +97,8 @@ export class OSCProcessor extends SessionMiddleware {
                 }
             } else if (oscCode === 52) {
                 if (oscParams[0] === 'c' || oscParams[0] === '') {
-                    const content = Buffer.from(oscParams[1], 'base64')
-                    this.copyRequested.next(content.toString())
+                    const content = Uint8Array.from(atob(oscParams[1]), c => c.charCodeAt(0))
+                    this.copyRequested.next(_dec.decode(content))
                 }
             } else {
                 processedData.push(data.subarray(prefixIndex, foundSuffix[1] + foundSuffix[0].length))
@@ -89,7 +110,7 @@ export class OSCProcessor extends SessionMiddleware {
 
         // Pass through all processed data
         if (processedData.length > 0) {
-            super.feedFromSession(Buffer.concat(processedData))
+            super.feedFromSession(concatUint8(...processedData))
         }
     }
 

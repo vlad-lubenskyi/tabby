@@ -121,9 +121,11 @@ export class VaultSettingsTabComponent extends BaseComponent {
         if (!transfers.length) {
             return
         }
+        const fileBytes = await transfers[0].readAll()
+        const base64Value = btoa(String.fromCharCode(...fileBytes))
         await this.vault.updateSecret(secret, {
             ...secret,
-            value: Buffer.from(await transfers[0].readAll()).toString('base64'),
+            value: base64Value,
         })
         this.loadVault()
     }
@@ -155,7 +157,9 @@ export class VaultSettingsTabComponent extends BaseComponent {
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
         secret = (await this.vault.getSecret(secret.type, secret.key)) as VaultFileSecret
 
-        const content = Buffer.from(secret.value, 'base64')
+        const contentStr = atob(secret.value)
+        const content = new Uint8Array(contentStr.length)
+        for (let i = 0; i < contentStr.length; i++) { content[i] = contentStr.charCodeAt(i) }
         const download = await this.platform.startDownload(secret.key.description, 0o600, content.length)
 
         if (download) {

@@ -25,7 +25,7 @@ export abstract class Frontend {
     protected mouseEvent = new Subject<MouseEvent>()
     protected bell = new Subject<void>()
     protected contentUpdated = new Subject<void>()
-    protected input = new Subject<Buffer>()
+    protected input = new Subject<Uint8Array>()
     protected resize = new ReplaySubject<ResizeEvent>(1)
     protected dragOver = new Subject<DragEvent>()
     protected drop = new Subject<DragEvent>()
@@ -37,7 +37,7 @@ export abstract class Frontend {
     get mouseEvent$ (): Observable<MouseEvent> { return this.mouseEvent }
     get bell$ (): Observable<void> { return this.bell }
     get contentUpdated$ (): Observable<void> { return this.contentUpdated }
-    get input$ (): Observable<Buffer> { return this.input }
+    get input$ (): Observable<Uint8Array> { return this.input }
     get resize$ (): Observable<ResizeEvent> { return this.resize }
     get dragOver$ (): Observable<DragEvent> { return this.dragOver }
     get drop$ (): Observable<DragEvent> { return this.drop }

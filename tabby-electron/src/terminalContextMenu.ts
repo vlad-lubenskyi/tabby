@@ -1,4 +1,3 @@
-import * as fs from 'fs'
 import { Injectable } from '@angular/core'
 import { MenuItemOptions, NotificationsService, TranslateService } from 'tabby-core'
 import { BaseTerminalTabComponent, TerminalContextMenuItemProvider } from 'tabby-terminal'
@@ -26,7 +25,7 @@ export class ExportTerminalContextMenu extends TerminalContextMenuItemProvider {
                     if (!frontend) {
                         return
                     }
-                    const result = await this.electron.dialog.showSaveDialog({
+                    const result = await this.electron.showSaveDialog({
                         defaultPath: 'terminal.txt',
                     })
                     if (!result.filePath) {
@@ -35,7 +34,7 @@ export class ExportTerminalContextMenu extends TerminalContextMenuItemProvider {
                     frontend.selectAll()
                     const content = frontend.getSelection()
                     frontend.clearSelection()
-                    await fs.promises.writeFile(result.filePath, content)
+                    await this.electron.ipc.invoke('bridge:file:write', result.filePath, content)
                     this.notifications.info(this.translate.instant('Saved to {path}', { path: result.filePath }))
                 },
             },

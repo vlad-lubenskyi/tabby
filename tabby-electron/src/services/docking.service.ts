@@ -1,11 +1,18 @@
 import { Injectable, NgZone, Inject } from '@angular/core'
-import type { Display } from 'electron'
 import { ConfigService, DockingService, Screen, PlatformService, BootstrapData, BOOTSTRAP_DATA } from 'tabby-core'
+
+interface DisplayInfo {
+    id: number
+    bounds: { x: number; y: number; width: number; height: number }
+    workArea: { x: number; y: number; width: number; height: number }
+}
 import { ElectronService } from '../services/electron.service'
 import { ElectronHostWindow, Bounds } from './hostWindow.service'
 
 @Injectable()
 export class ElectronDockingService extends DockingService {
+    private _screensCache: Screen[] = []
+
     constructor (
         private electron: ElectronService,
         private config: ConfigService,
@@ -18,12 +25,35 @@ export class ElectronDockingService extends DockingService {
         this.screensChanged$.subscribe(() => this.repositionWindow())
         platform.displayMetricsChanged$.subscribe(() => this.repositionWindow())
 
-        electron.ipcRenderer.on('host:displays-changed', () => {
-            this.zone.run(() => this.screensChanged.next())
+        electron.ipc.on('host:displays-changed', () => {
+            this.zone.run(() => {
+                this._refreshScreensCache()
+                this.screensChanged.next()
+            })
+        })
+
+        // Populate cache immediately
+        this._refreshScreensCache()
+    }
+
+    private _refreshScreensCache (): void {
+        this._getScreensAsync().then(screens => {
+            this._screensCache = screens
         })
     }
 
-    dock (): void {
+    private async _getScreensAsync (): Promise<Screen[]> {
+        const primaryDisplayID = (await this.electron.getPrimaryDisplay()).id
+        return (await this.electron.getAllDisplays()).sort((a, b) =>
+            a.bounds.x === b.bounds.x ? a.bounds.y - b.bounds.y : a.bounds.x - b.bounds.x,
+        ).map((display, index) => ({
+            ...display,
+            id: display.id,
+            name: display.id === primaryDisplayID ? 'Primary Display' : `Display ${index + 1}`,
+        }))
+    }
+
+    async dock (): Promise<void> {
         const dockSide = this.config.store.appearance.dock
 
         if (dockSide === 'off' || !this.bootstrapData.isMainWindow) {
@@ -31,18 +61,19 @@ export class ElectronDockingService extends DockingService {
             return
         }
 
-        let display = this.electron.screen.getAllDisplays()
+        let display = (await this.electron.getAllDisplays())
             .filter(x => x.id === this.config.store.appearance.dockScreen)[0]
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (!display) {
-            display = this.getCurrentScreen()
+            display = await this.getCurrentScreen()
         }
 
         const newBounds: Bounds = { x: 0, y: 0, width: 0, height: 0 }
 
         const fill = this.config.store.appearance.dockFill <= 1 ? this.config.store.appearance.dockFill : 1
         const space = this.config.store.appearance.dockSpace <= 1 ? this.config.store.appearance.dockSpace : 1
-        const [minWidth, minHeight] = this.hostWindow.getWindow().getMinimumSize()
+        const minWidth = 0
+        const minHeight = 0
 
         if (dockSide === 'left' || dockSide === 'right') {
             newBounds.width = Math.max(minWidth, Math.round(fill * display.workArea.width))
@@ -70,37 +101,28 @@ export class ElectronDockingService extends DockingService {
         const alwaysOnTop = this.config.store.appearance.dockAlwaysOnTop
 
         this.hostWindow.setAlwaysOnTop(alwaysOnTop)
-        setImmediate(() => {
+        setTimeout(() => {
             this.hostWindow.setBounds(newBounds)
-        })
+        }, 0)
     }
 
     getScreens (): Screen[] {
-        const primaryDisplayID = this.electron.screen.getPrimaryDisplay().id
-        return this.electron.screen.getAllDisplays().sort((a, b) =>
-            a.bounds.x === b.bounds.x ? a.bounds.y - b.bounds.y : a.bounds.x - b.bounds.x,
-        ).map((display, index) => {
-            return {
-                ...display,
-                id: display.id,
-                name: display.id === primaryDisplayID ? 'Primary Display' : `Display ${index + 1}`,
-            }
-        })
+        return this._screensCache
     }
 
-    private getCurrentScreen (): Display {
-        return this.electron.screen.getDisplayNearestPoint(this.electron.screen.getCursorScreenPoint())
+    private async getCurrentScreen (): Promise<DisplayInfo> {
+        return this.electron.getDisplayNearestPoint(await this.electron.getCursorScreenPoint())
     }
 
-    private repositionWindow () {
-        const [x, y] = this.hostWindow.getWindow().getPosition()
-        for (const screen of this.electron.screen.getAllDisplays()) {
+    private async repositionWindow (): Promise<void> {
+        const cursorPoint = await this.electron.getCursorScreenPoint()
+        for (const screen of await this.electron.getAllDisplays()) {
             const bounds = screen.bounds
-            if (x >= bounds.x && x <= bounds.x + bounds.width && y >= bounds.y && y <= bounds.y + bounds.height) {
+            if (cursorPoint.x >= bounds.x && cursorPoint.x <= bounds.x + bounds.width && cursorPoint.y >= bounds.y && cursorPoint.y <= bounds.y + bounds.height) {
                 return
             }
         }
-        const screen = this.electron.screen.getPrimaryDisplay()
-        this.hostWindow.getWindow().setPosition(screen.bounds.x, screen.bounds.y)
+        const screen = await this.electron.getPrimaryDisplay()
+        this.electron.ipc.send('window-set-position', screen.bounds.x, screen.bounds.y)
     }
 }

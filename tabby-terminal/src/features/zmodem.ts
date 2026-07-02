@@ -21,7 +21,7 @@ class ZModemMiddleware extends SessionMiddleware {
     // bytes (the shell prompt redrawn after sz exits) until after the final
     // "Received"/"Complete" messages have been printed, so the prompt is not
     // overwritten by showMessage()'s leading "\r".
-    private trailingBuffer: Buffer[] | null = null
+    private trailingBuffer: Uint8Array[] | null = null
 
     private flushTrailingBuffer () {
         const buffered = this.trailingBuffer
@@ -55,13 +55,14 @@ class ZModemMiddleware extends SessionMiddleware {
             // While trailingBuffer is active they are queued so the final
             // status messages can be printed first; otherwise forward directly.
             to_terminal: data => {
+                const chunk = data instanceof Uint8Array ? data : new Uint8Array(data)
                 if (this.trailingBuffer) {
-                    this.trailingBuffer.push(Buffer.from(data))
+                    this.trailingBuffer.push(chunk)
                 } else {
-                    this.outputToTerminal.next(Buffer.from(data))
+                    this.outputToTerminal.next(chunk)
                 }
             },
-            sender: data => this.outputToSession.next(Buffer.from(data)),
+            sender: data => this.outputToSession.next(data instanceof Uint8Array ? data : new Uint8Array(data)),
             on_detect: async detection => {
                 if ((await this.platform.showMessageBox({
                     type: 'warning',
@@ -101,7 +102,7 @@ class ZModemMiddleware extends SessionMiddleware {
         })
     }
 
-    feedFromSession (data: Buffer): void {
+    feedFromSession (data: Uint8Array): void {
         if (this.isActive || this.activeSession) {
             try {
                 this.sentry.consume(data)
@@ -237,7 +238,7 @@ class ZModemMiddleware extends SessionMiddleware {
                         }
 
                         writeQueue = writeQueue
-                            .then(() => transfer.write(Buffer.from(chunk)))
+                            .then(() => transfer.write(chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk)))
                             .catch(err => {
                                 this.logger.error('Zmodem write error', err)
                             })
@@ -317,9 +318,9 @@ class ZModemMiddleware extends SessionMiddleware {
     }
 
     private showMessage (msg: string, overwrite = false) {
-        this.outputToTerminal.next(Buffer.from(`\r${msg}${SPACER}`))
+        this.outputToTerminal.next(new TextEncoder().encode(`\r${msg}${SPACER}`))
         if (!overwrite) {
-            this.outputToTerminal.next(Buffer.from('\r\n'))
+            this.outputToTerminal.next(new TextEncoder().encode('\r\n'))
         }
     }
 }

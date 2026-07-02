@@ -234,10 +234,10 @@ export class AppService {
         }
         this._activeTab = tab
         this.activeTabChange.next(tab)
-        setImmediate(() => {
+        setTimeout(() => {
             this._activeTab?.emitFocused()
             this._activeTab?.emitVisibility(true)
-        })
+        }, 0)
         this.hostWindow.setTitle(this._activeTab?.title)
     }
 

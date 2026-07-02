@@ -1,4 +1,4 @@
-import * as path from 'path'
+declare const require: (module: string) => any
 import { Injectable } from '@angular/core'
 import { Platform, ConfigService, HostAppService } from 'tabby-core'
 
@@ -40,7 +40,7 @@ export class GitBashShellProvider extends WindowsBaseShellProvider {
         return [{
             id: 'git-bash',
             name: 'Git Bash',
-            command: path.join(gitBashPath, 'bin', 'bash.exe'),
+            command: gitBashPath + '\\bin\\bash.exe',
             args: ['--login', '-i'],
             icon: require('../icons/git-bash.svg'),
             env: this.getEnvironment(),

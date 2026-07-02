@@ -49,7 +49,7 @@ export class EnvironmentEditorComponent {
     }
 
     addExample (): void {
-        const value = process.platform === 'win32' ? 'C:\\Program Files\\Custom:%PATH%' : '/opt/custom:$PATH'
+        const value = (window as any).tabbyAPI.platform === 'win32' ? 'C:\\Program Files\\Custom:%PATH%' : '/opt/custom:$PATH'
         this.vars.push({ key: 'PATH', value })
         this.emitUpdate()
     }

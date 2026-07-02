@@ -1,12 +1,12 @@
-import * as fs from 'mz/fs'
-import * as fsSync from 'fs'
 import { Injector } from '@angular/core'
 import { HostAppService, ConfigService, WIN_BUILD_CONPTY_SUPPORTED, isWindowsBuild, Platform, BootstrapData, BOOTSTRAP_DATA, LogService } from 'tabby-core'
 import { BaseSession } from 'tabby-terminal'
 import { SessionOptions, ChildProcess, PTYInterface, PTYProxy } from './api'
 import { getEnvironment, substituteEnv } from './environment'
 
-const windowsDirectoryRegex = /([a-zA-Z]:[^\:\[\]\?\"\<\>\|]+)/mi
+const ipc = () => (window as any).tabbyAPI?.ipc
+
+const windowsDirectoryRegex = /([a-zA-Z]:[^\:\[\]\?\"\<\>\|]+)/mi
 
 function mergeEnv (...envs) {
     const result = {}
@@ -74,8 +74,10 @@ export class Session extends BaseSession {
 
             delete env['']
 
-            if (this.hostApp.platform === Platform.macOS && !process.env.LC_ALL) {
-                const locale = process.env.LC_CTYPE ?? 'en_US.UTF-8'
+            if (this.hostApp.platform === Platform.macOS) {
+                // LC_ALL and LC_CTYPE are not available in the renderer context;
+                // always apply locale defaults for macOS PTY sessions.
+                const locale = 'en_US.UTF-8'
                 Object.assign(env, {
                     LANG: locale,
                     LC_ALL: locale,
@@ -87,9 +89,9 @@ export class Session extends BaseSession {
             }
 
             // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-            let cwd = options.cwd || process.env.HOME
+            let cwd = options.cwd || (window as any).tabbyAPI.env.HOME
 
-            if (!fsSync.existsSync(cwd!)) {
+            if (cwd && !(await ipc().invoke('bridge:fs:exists', cwd))) {
                 console.warn('Ignoring non-existent CWD:', cwd)
                 cwd = undefined
             }
@@ -118,10 +120,9 @@ export class Session extends BaseSession {
 
         this.pty.subscribe('data', (array: Uint8Array) => {
             this.pty!.ackData(array.length)
-            const data = Buffer.from(array)
-            this.emitOutput(data)
+            this.emitOutput(array)
             if (this.hostApp.platform === Platform.Windows) {
-                this.guessWindowsCWD(data.toString())
+                this.guessWindowsCWD(new TextDecoder().decode(array))
             }
         })
 
@@ -136,7 +137,7 @@ export class Session extends BaseSession {
         this.pty.subscribe('close', () => {
             this.ptyClosed = true
             if (this.pauseAfterExit) {
-                this.emitOutput(Buffer.from('\r\nPress any key to close\r\n'))
+                this.emitOutput(new TextEncoder().encode('\r\nPress any key to close\r\n'))
             } else if (this.open) {
                 this.destroy()
             }
@@ -155,7 +156,7 @@ export class Session extends BaseSession {
         this.pty?.resize(columns, rows)
     }
 
-    write (data: Buffer): void {
+    write (data: Uint8Array): void {
         if (this.ptyClosed) {
             this.destroy()
         }
@@ -180,9 +181,12 @@ export class Session extends BaseSession {
                 this.kill('SIGTERM')
                 setTimeout(async () => {
                     try {
-                        process.kill(await this.pty!.getPID(), 0)
-                        // still alive
-                        this.kill('SIGKILL')
+                        // Check if process is still alive via PTY exists check
+                        const ptyId = this.pty?.getID()
+                        const alive = ptyId ? await ipc().invoke('pty:exists', ptyId) : false
+                        if (alive) {
+                            this.kill('SIGKILL')
+                        }
                         resolve()
                     } catch {
                         resolve()
@@ -207,11 +211,10 @@ export class Session extends BaseSession {
             console.info('Could not read working directory:', exc)
         }
 
-        try {
-            cwd = await fs.realpath(cwd)
-        } catch {}
+        // Note: realpath resolution is skipped — no fs.realpath available in renderer context.
 
-        if (this.hostApp.platform === Platform.Windows && (cwd === this.initialCWD || cwd === process.env.WINDIR)) {
+        const windir = (window as any).tabbyAPI.env.windir
+        if (this.hostApp.platform === Platform.Windows && (cwd === this.initialCWD || (windir && cwd === windir))) {
             // shell doesn't truly change its process' CWD
             cwd = null
         }
@@ -219,11 +222,13 @@ export class Session extends BaseSession {
         // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
         cwd = cwd || this.guessedCWD
 
-        try {
-            await fs.access(cwd)
-        } catch {
-            return null
+        if (cwd) {
+            const exists: boolean = await ipc().invoke('bridge:fs:exists', cwd)
+            if (!exists) {
+                return null
+            }
         }
+
         return cwd
     }
 

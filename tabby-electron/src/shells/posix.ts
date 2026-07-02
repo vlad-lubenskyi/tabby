@@ -1,4 +1,3 @@
-import * as fs from 'mz/fs'
 import slugify from 'slugify'
 import { Injectable } from '@angular/core'
 import { HostAppService, Platform } from 'tabby-core'
@@ -8,6 +7,8 @@ import { ShellProvider, Shell } from 'tabby-local'
 /** @hidden */
 @Injectable()
 export class POSIXShellsProvider extends ShellProvider {
+    private get ipc () { return (window as any).tabbyAPI?.ipc }
+
     constructor (
         private hostApp: HostAppService,
     ) {
@@ -19,19 +20,19 @@ export class POSIXShellsProvider extends ShellProvider {
             return []
         }
         let shellListPath = '/etc/shells'
-        try {
-            await fs.stat(shellListPath)
-        } catch {
+        if (!await this.ipc.invoke('bridge:fs:exists', shellListPath)) {
             // Solus Linux
             shellListPath = '/usr/share/defaults/etc/shells'
         }
-        return (await fs.readFile(shellListPath, { encoding: 'utf-8' }))
+        const raw: Uint8Array = await this.ipc.invoke('bridge:file:read', shellListPath)
+        const content = new TextDecoder().decode(raw)
+        return content
             .split('\n')
             .map(x => x.trim())
             .filter(x => x && !x.startsWith('#'))
             .map(x => ({
                 id: slugify(x),
-                name: x.split('/').pop(),
+                name: x.split('/').pop() ?? x,
                 icon: 'fas fa-terminal',
                 command: x,
                 args: ['-l'],

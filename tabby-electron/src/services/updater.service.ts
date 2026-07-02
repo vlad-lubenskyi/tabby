@@ -23,33 +23,33 @@ export class ElectronUpdaterService extends UpdaterService {
         super()
         this.logger = log.create('updater')
 
-        if (process.platform === 'linux' || process.env.PORTABLE_EXECUTABLE_FILE) {
+        if (this.electron.platform === 'linux' || this.electron.portableExecutableFile) {
             this.electronUpdaterAvailable = false
             return
         }
 
-        this.electron.ipcRenderer.on('updater:update-available', () => {
+        this.electron.ipc.on('updater:update-available', () => {
             this.logger.info('Update available')
         })
 
-        this.electron.ipcRenderer.on('updater:update-not-available', () => {
+        this.electron.ipc.on('updater:update-not-available', () => {
             this.logger.info('No updates')
         })
 
-        this.electron.ipcRenderer.on('updater:error', err => {
+        this.electron.ipc.on('updater:error', err => {
             this.logger.error(err)
             this.electronUpdaterAvailable = false
         })
 
         this.downloaded = new Promise<boolean>(resolve => {
-            this.electron.ipcRenderer.once('updater:update-downloaded', () => resolve(true))
+            this.electron.ipc.once('updater:update-downloaded', () => resolve(true))
         })
 
         config.ready$.toPromise().then(() => {
-            if (config.store.enableAutomaticUpdates && this.electronUpdaterAvailable && !process.env.TABBY_DEV) {
+            if (config.store.enableAutomaticUpdates && this.electronUpdaterAvailable && !this.electron.devMode) {
                 this.logger.debug('Checking for updates')
                 try {
-                    this.electron.ipcRenderer.send('updater:check-for-updates')
+                    this.electron.ipc.send('updater:check-for-updates')
                 } catch (e) {
                     this.electronUpdaterAvailable = false
                     this.logger.info('Electron updater unavailable, falling back', e)
@@ -76,26 +76,26 @@ export class ElectronUpdaterService extends UpdaterService {
                     reject(err)
                 }
                 cancel = () => {
-                    this.electron.ipcRenderer.off('updater:error', onError)
-                    this.electron.ipcRenderer.off('updater:update-not-available', onNoUpdate)
-                    this.electron.ipcRenderer.off('updater:update-available', onUpdate)
+                    this.electron.ipc.off('updater:error', onError)
+                    this.electron.ipc.off('updater:update-not-available', onNoUpdate)
+                    this.electron.ipc.off('updater:update-available', onUpdate)
                 }
-                this.electron.ipcRenderer.on('updater:error', onError)
-                this.electron.ipcRenderer.on('updater:update-not-available', onNoUpdate)
-                this.electron.ipcRenderer.on('updater:update-available', onUpdate)
+                this.electron.ipc.on('updater:error', onError)
+                this.electron.ipc.on('updater:update-not-available', onNoUpdate)
+                this.electron.ipc.on('updater:update-available', onUpdate)
                 try {
-                    this.electron.ipcRenderer.send('updater:check-for-updates')
+                    this.electron.ipc.send('updater:check-for-updates')
                 } catch (e) {
                     this.electronUpdaterAvailable = false
                     this.logger.info('Electron updater unavailable, falling back', e)
                 }
             })
 
-            this.electron.ipcRenderer.on('updater:update-available', () => {
+            this.electron.ipc.on('updater:update-available', () => {
                 this.logger.info('Update available')
             })
 
-            this.electron.ipcRenderer.once('updater:update-not-available', () => {
+            this.electron.ipc.once('updater:update-not-available', () => {
                 this.logger.info('No updates')
             })
 
@@ -104,7 +104,7 @@ export class ElectronUpdaterService extends UpdaterService {
             const response = await axios.get(UPDATES_URL)
             const data = response.data
             const version = data.tag_name.substring(1)
-            if (this.electron.app.getVersion() !== version) {
+            if (await this.electron.getAppVersion() !== version) {
                 this.logger.info('Update available')
                 this.updateURL = data.html_url
                 return true
@@ -132,7 +132,7 @@ export class ElectronUpdaterService extends UpdaterService {
                 },
             )).response === 0) {
                 await this.downloaded
-                this.electron.ipcRenderer.send('updater:quit-and-install')
+                this.electron.ipc.send('updater:quit-and-install')
             }
         }
     }

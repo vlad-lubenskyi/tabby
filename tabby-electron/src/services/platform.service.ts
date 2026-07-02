@@ -1,60 +1,50 @@
-import * as path from 'path'
-import * as fs from 'fs/promises'
-import * as fsSync from 'fs'
-import * as os from 'os'
-import promiseIpc, { RendererProcessType } from 'electron-promise-ipc'
-import { execFile } from 'mz/child_process'
 import { Injectable, NgZone } from '@angular/core'
 import { PlatformService, ClipboardContent, Platform, MenuItemOptions, MessageBoxOptions, MessageBoxResult, DirectoryUpload, FileUpload, FileDownload, DirectoryDownload, FileUploadOptions, wrapPromise, TranslateService, FileTransfer, PlatformTheme } from 'tabby-core'
 import { ElectronService } from '../services/electron.service'
-import { ElectronHostWindow } from './hostWindow.service'
 import { ShellIntegrationService } from './shellIntegration.service'
 import { ElectronHostAppService } from './hostApp.service'
-import { configPath } from '../../../app/lib/config'
-const fontManager = require('fontmanager-redux') // eslint-disable-line
-
-/* eslint-disable block-scoped-var */
-
-try {
-    // eslint-disable-next-line no-var
-    var windowsProcessTreeNative = require('@tabby-gang/windows-process-tree/build/Release/windows_process_tree.node')
-    // eslint-disable-next-line no-var
-    var wnr = require('windows-native-registry')
-} catch { }
 
 @Injectable({ providedIn: 'root' })
 export class ElectronPlatformService extends PlatformService {
     supportsWindowControls = true
     private safeExternalSchemes = new Set(['http', 'https', 'ftp', 'mailto'])
     private configPath: string
+    private _shouldUseDarkColors = true
+    private _osRelease = ''
 
     constructor (
         private hostApp: ElectronHostAppService,
-        private hostWindow: ElectronHostWindow,
         private electron: ElectronService,
         private zone: NgZone,
         private shellIntegration: ShellIntegrationService,
         private translate: TranslateService,
     ) {
         super()
-        this.configPath = configPath
+        // Derive config path from userDataPath exposed via contextBridge (no Node.js path needed)
+        const userDataPath = (window as any).tabbyAPI?.userDataPath ?? ''
+        this.configPath = userDataPath ? userDataPath + '/config.yaml' : ''
 
-        electron.ipcRenderer.on('host:display-metrics-changed', () => {
+        electron.ipc.on('host:display-metrics-changed', () => {
             this.zone.run(() => this.displayMetricsChanged.next())
         })
 
-        electron.nativeTheme.on('updated', () => {
-            this.zone.run(() => this.themeChanged.next(this.getTheme()))
+        this.electron.ipc.invoke('bridge:os:release').then((r: string) => { this._osRelease = r })
+        this.electron.getShouldUseDarkColors().then(v => { this._shouldUseDarkColors = v })
+        this.electron.onNativeThemeUpdated(() => {
+            this.electron.getShouldUseDarkColors().then(v => {
+                this._shouldUseDarkColors = v
+                this.zone.run(() => this.themeChanged.next(this.getTheme()))
+            })
         })
     }
 
     async getAllFiles (dir: string, root: DirectoryUpload): Promise<DirectoryUpload> {
-        const items = await fs.readdir(dir, { withFileTypes: true })
+        const items: Array<{ name: string; isDirectory: boolean }> = await this.electron.ipc.invoke('bridge:fs:readdir', dir)
         for (const item of items) {
-            if (item.isDirectory()) {
-                root.pushChildren(await this.getAllFiles(path.join(dir, item.name), new DirectoryUpload(item.name)))
+            if (item.isDirectory) {
+                root.pushChildren(await this.getAllFiles(dir + '/' + item.name, new DirectoryUpload(item.name)))
             } else {
-                const file = new ElectronFileUpload(path.join(dir, item.name), this.electron)
+                const file = new ElectronFileUpload(dir + '/' + item.name, this.electron)
                 root.pushChildren(file)
                 await wrapPromise(this.zone, file.open())
                 this.fileTransferStarted.next(file)
@@ -68,41 +58,33 @@ export class ElectronPlatformService extends PlatformService {
     }
 
     setClipboard (content: ClipboardContent): void {
-        require('@electron/remote').clipboard.write(content)
+        this.electron.clipboard.write(content)
     }
 
     async installPlugin (name: string, version: string): Promise<void> {
-        await (promiseIpc as RendererProcessType).send('plugin-manager:install', name, version)
+        await this.electron.ipc.invoke('plugin-manager:install', name, version)
     }
 
     async uninstallPlugin (name: string): Promise<void> {
-        await (promiseIpc as RendererProcessType).send('plugin-manager:uninstall', name)
+        await this.electron.ipc.invoke('plugin-manager:uninstall', name)
     }
 
     async isProcessRunning (name: string): Promise<boolean> {
         if (this.hostApp.platform === Platform.Windows) {
-            return new Promise<boolean>(resolve => {
-                windowsProcessTreeNative.getProcessList(list => { // eslint-disable-line block-scoped-var
-                    resolve(list.some(x => x.name === name))
-                }, 0)
-            })
+            return this.electron.ipc.invoke('bridge:process:is-running', name)
         } else {
             throw new Error('Not supported')
         }
     }
 
     getWinSCPPath (): string|null {
-        const key = wnr.getRegistryKey(wnr.HK.CR, 'WinSCP.Url\\DefaultIcon')
-        if (key?.['']) {
-            let detectedPath = key[''].value?.split(',')[0]
-            detectedPath = detectedPath?.substring(1, detectedPath.length - 1)
-            return detectedPath
-        }
+        // Synchronous registry read is not available in the sandboxed renderer.
+        // WinSCP integration is Windows-only and requires a separate async IPC call.
         return null
     }
 
     async exec (app: string, argv: string[]): Promise<void> {
-        await execFile(app, argv)
+        await this.electron.ipc.invoke('bridge:process:exec', app, argv)
     }
 
     isShellIntegrationSupported (): boolean {
@@ -122,11 +104,7 @@ export class ElectronPlatformService extends PlatformService {
     }
 
     async loadConfig (): Promise<string> {
-        if (fsSync.existsSync(this.configPath)) {
-            return fs.readFile(this.configPath, 'utf8')
-        } else {
-            return ''
-        }
+        return this.electron.ipc.invoke('bridge:config:read-raw')
     }
 
     async saveConfig (content: string): Promise<void> {
@@ -161,8 +139,7 @@ export class ElectronPlatformService extends PlatformService {
 
     private async confirmAndOpenExternal (url: string): Promise<void> {
         const scheme = this.getExternalScheme(url)
-        const result = await this.electron.dialog.showMessageBox(
-            this.hostWindow.getWindow(),
+        const result = await this.electron.showMessageBox(
             {
                 type: 'warning',
                 message: this.translate.instant(`Open this app-specific "${scheme}" URI?`),
@@ -186,35 +163,19 @@ export class ElectronPlatformService extends PlatformService {
     }
 
     getOSRelease (): string {
-        return os.release()
+        return this._osRelease
     }
 
     getAppVersion (): string {
-        return this.electron.app.getVersion()
+        return this.electron.getAppVersion()
     }
 
     async listFonts (): Promise<string[]> {
-        if (this.hostApp.platform === Platform.Windows || this.hostApp.platform === Platform.macOS) {
-            let fonts = await new Promise<any[]>(resolve => fontManager.getAvailableFonts(resolve))
-            fonts = fonts.map(x => x.family.trim())
-            return fonts
-        }
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-        if (this.hostApp.platform === Platform.Linux) {
-            const stdout = (await execFile('fc-list', [':spacing=mono']))[0]
-            const fonts = stdout.toString()
-                .split('\n')
-                .filter(x => !!x)
-                .map(x => x.split(':')[1].trim())
-                .map(x => x.split(',')[0].trim())
-            fonts.sort()
-            return fonts
-        }
-        return []
+        return this.electron.ipc.invoke('bridge:fonts:list')
     }
 
-    popupContextMenu (menu: MenuItemOptions[], _event?: MouseEvent): void {
-        this.electron.Menu.buildFromTemplate(menu.map(item => this.rewrapMenuItemOptions(item))).popup({})
+    async popupContextMenu (menu: MenuItemOptions[], _event?: MouseEvent): Promise<void> {
+        await this.electron.popupMenu(menu.map(item => this.rewrapMenuItemOptions(item)))
     }
 
     rewrapMenuItemOptions (menu: MenuItemOptions): MenuItemOptions {
@@ -230,11 +191,11 @@ export class ElectronPlatformService extends PlatformService {
     }
 
     async showMessageBox (options: MessageBoxOptions): Promise<MessageBoxResult> {
-        return this.electron.dialog.showMessageBox(this.hostWindow.getWindow(), options)
+        return this.electron.showMessageBox(options)
     }
 
     quit (): void {
-        this.electron.app.exit(0)
+        this.electron.exit(0)
     }
 
     async startUpload (options?: FileUploadOptions, paths?: string[]): Promise<FileUpload[]> {
@@ -246,8 +207,7 @@ export class ElectronPlatformService extends PlatformService {
         }
 
         if (!paths) {
-            const result = await this.electron.dialog.showOpenDialog(
-                this.hostWindow.getWindow(),
+            const result = await this.electron.showOpenDialog(
                 {
                     buttonLabel: this.translate.instant('Select'),
                     properties,
@@ -256,10 +216,10 @@ export class ElectronPlatformService extends PlatformService {
             if (result.canceled) {
                 return []
             }
-            paths = result.filePaths
+            paths = result.filePaths ?? []
         }
 
-        return Promise.all(paths.map(async p => {
+        return Promise.all(paths!.map(async p => {
             const transfer = new ElectronFileUpload(p, this.electron)
             await wrapPromise(this.zone, transfer.open())
             this.fileTransferStarted.next(transfer)
@@ -271,8 +231,7 @@ export class ElectronPlatformService extends PlatformService {
         const properties: any[] = ['openFile', 'treatPackageAsDirectory', 'openDirectory']
 
         if (!paths) {
-            const result = await this.electron.dialog.showOpenDialog(
-                this.hostWindow.getWindow(),
+            const result = await this.electron.showOpenDialog(
                 {
                     buttonLabel: this.translate.instant('Select'),
                     properties,
@@ -281,18 +240,21 @@ export class ElectronPlatformService extends PlatformService {
             if (result.canceled) {
                 return new DirectoryUpload()
             }
-            paths = result.filePaths
+            paths = result.filePaths ?? []
         }
 
         const root = new DirectoryUpload()
-        root.pushChildren(await this.getAllFiles(paths[0].split(path.sep).join(path.posix.sep), new DirectoryUpload(path.basename(paths[0]))))
+        const sep: string = await this.electron.ipc.invoke('bridge:path:sep')
+        const posixSep: string = await this.electron.ipc.invoke('bridge:path:posix-sep')
+        const baseName: string = await this.electron.ipc.invoke('bridge:path:basename', paths![0])
+        const normalizedPath = paths![0].split(sep).join(posixSep)
+        root.pushChildren(await this.getAllFiles(normalizedPath, new DirectoryUpload(baseName)))
         return root
     }
 
     async startDownload (name: string, mode: number, size: number, filePath?: string): Promise<FileDownload|null> {
         if (!filePath) {
-            const result = await this.electron.dialog.showSaveDialog(
-                this.hostWindow.getWindow(),
+            const result = await this.electron.showSaveDialog(
                 {
                     defaultPath: name,
                 },
@@ -300,9 +262,9 @@ export class ElectronPlatformService extends PlatformService {
             if (!result.filePath) {
                 return null
             }
-            filePath = result.filePath
+            filePath = result.filePath ?? ''
         }
-        const transfer = new ElectronFileDownload(filePath, mode, size, this.electron)
+        const transfer = new ElectronFileDownload(filePath!, mode, size, this.electron)
         await wrapPromise(this.zone, transfer.open())
         this.fileTransferStarted.next(transfer)
         return transfer
@@ -314,10 +276,10 @@ export class ElectronPlatformService extends PlatformService {
             return null
         }
 
-        let downloadPath = path.join(selectedFolder, name)
+        let downloadPath = selectedFolder + '/' + name
         let counter = 1
-        while (fsSync.existsSync(downloadPath)) {
-            downloadPath = path.join(selectedFolder, `${name} (${counter})`)
+        while (await this.electron.ipc.invoke('bridge:fs:exists', downloadPath)) {
+            downloadPath = selectedFolder + '/' + name + ' (' + counter + ')'
             counter++
         }
 
@@ -332,14 +294,13 @@ export class ElectronPlatformService extends PlatformService {
     }
 
     setErrorHandler (handler: (_: any) => void): void {
-        this.electron.ipcRenderer.on('uncaughtException', (_$event, err) => {
+        this.electron.ipc.on('uncaughtException', (err) => {
             handler(err)
         })
     }
 
     async pickDirectory (title?: string, buttonLabel?: string): Promise<string | null> {
-        const result = await this.electron.dialog.showOpenDialog(
-            this.hostWindow.getWindow(),
+        const result = await this.electron.showOpenDialog(
             {
                 title,
                 buttonLabel,
@@ -353,37 +314,33 @@ export class ElectronPlatformService extends PlatformService {
     }
 
     getTheme (): PlatformTheme {
-        if (this.electron.nativeTheme.shouldUseDarkColors) {
-            return 'dark'
-        } else {
-            return 'light'
-        }
+        return this._shouldUseDarkColors ? 'dark' : 'light'
     }
 }
 
 class ElectronFileUpload extends FileUpload {
     private size: number
     private mode: number
-    private file: fs.FileHandle
+    private handleId: number
     private buffer: Uint8Array
-    private powerSaveBlocker = 0
+    private powerSaveBlocker: Promise<number>
 
     constructor (private filePath: string, private electron: ElectronService) {
         super()
         this.buffer = new Uint8Array(256 * 1024)
-        this.powerSaveBlocker = electron.powerSaveBlocker.start('prevent-app-suspension')
+        this.powerSaveBlocker = electron.startPowerSaveBlocker('prevent-app-suspension')
     }
 
     async open (): Promise<void> {
-        const stat = await fs.stat(this.filePath)
+        const stat: { size: number; mode: number; isDirectory: boolean } = await this.electron.ipc.invoke('bridge:fs:stat', this.filePath)
         this.size = stat.size
         this.mode = stat.mode
         this.setTotalSize(this.size)
-        this.file = await fs.open(this.filePath, 'r')
+        this.handleId = await this.electron.ipc.invoke('bridge:fs:open', this.filePath, 'r')
     }
 
     getName (): string {
-        return path.basename(this.filePath)
+        return this.filePath.replace(/\\/g, '/').split('/').pop() ?? ''
     }
 
     getMode (): number {
@@ -395,23 +352,23 @@ class ElectronFileUpload extends FileUpload {
     }
 
     async read (): Promise<Uint8Array> {
-        const result = await this.file.read(this.buffer, 0, this.buffer.length, null)
+        const result: { data: Uint8Array; bytesRead: number } = await this.electron.ipc.invoke('bridge:fs:read-chunk', this.handleId, this.buffer.length)
         this.increaseProgress(result.bytesRead)
         if (this.getCompletedBytes() >= this.getSize()) {
             this.setCompleted(true)
         }
-        return this.buffer.slice(0, result.bytesRead)
+        return new Uint8Array(result.data).slice(0, result.bytesRead)
     }
 
     close (): void {
-        this.electron.powerSaveBlocker.stop(this.powerSaveBlocker)
-        this.file.close()
+        this.powerSaveBlocker.then(id => this.electron.stopPowerSaveBlocker(id))
+        this.electron.ipc.invoke('bridge:fs:close', this.handleId)
     }
 }
 
 class ElectronFileDownload extends FileDownload {
-    private file: fs.FileHandle
-    private powerSaveBlocker = 0
+    private handleId: number
+    private powerSaveBlocker: Promise<number>
 
     constructor (
         private filePath: string,
@@ -420,16 +377,16 @@ class ElectronFileDownload extends FileDownload {
         private electron: ElectronService,
     ) {
         super()
-        this.powerSaveBlocker = electron.powerSaveBlocker.start('prevent-app-suspension')
+        this.powerSaveBlocker = electron.startPowerSaveBlocker('prevent-app-suspension')
         this.setTotalSize(size)
     }
 
     async open (): Promise<void> {
-        this.file = await fs.open(this.filePath, 'w', this.mode)
+        this.handleId = await this.electron.ipc.invoke('bridge:fs:open', this.filePath, 'w', this.mode)
     }
 
     getName (): string {
-        return path.basename(this.filePath)
+        return this.filePath.replace(/\\/g, '/').split('/').pop() ?? ''
     }
 
     getSize (): number {
@@ -439,9 +396,9 @@ class ElectronFileDownload extends FileDownload {
     async write (buffer: Uint8Array): Promise<void> {
         let pos = 0
         while (pos < buffer.length) {
-            const result = await this.file.write(buffer, pos, buffer.length - pos, null)
-            this.increaseProgress(result.bytesWritten)
-            pos += result.bytesWritten
+            const bytesWritten: number = await this.electron.ipc.invoke('bridge:fs:write-chunk', this.handleId, buffer.slice(pos), pos)
+            this.increaseProgress(bytesWritten)
+            pos += bytesWritten
         }
         if (this.getCompletedBytes() >= this.getSize()) {
             this.setCompleted(true)
@@ -449,13 +406,13 @@ class ElectronFileDownload extends FileDownload {
     }
 
     close (): void {
-        this.electron.powerSaveBlocker.stop(this.powerSaveBlocker)
-        this.file.close()
+        this.powerSaveBlocker.then(id => this.electron.stopPowerSaveBlocker(id))
+        this.electron.ipc.invoke('bridge:fs:close', this.handleId)
     }
 }
 
 class ElectronDirectoryDownload extends DirectoryDownload {
-    private powerSaveBlocker = 0
+    private powerSaveBlocker: Promise<number>
 
     constructor (
         private basePath: string,
@@ -465,12 +422,12 @@ class ElectronDirectoryDownload extends DirectoryDownload {
         private zone: NgZone,
     ) {
         super()
-        this.powerSaveBlocker = electron.powerSaveBlocker.start('prevent-app-suspension')
+        this.powerSaveBlocker = electron.startPowerSaveBlocker('prevent-app-suspension')
         this.setTotalSize(estimatedSize)
     }
 
     async open (): Promise<void> {
-        await fs.mkdir(this.basePath, { recursive: true })
+        await this.electron.ipc.invoke('bridge:fs:mkdir', this.basePath, { recursive: true })
     }
 
     getName (): string {
@@ -482,13 +439,14 @@ class ElectronDirectoryDownload extends DirectoryDownload {
     }
 
     async createDirectory (relativePath: string): Promise<void> {
-        const fullPath = path.join(this.basePath, relativePath)
-        await fs.mkdir(fullPath, { recursive: true })
+        const fullPath = this.basePath + '/' + relativePath
+        await this.electron.ipc.invoke('bridge:fs:mkdir', fullPath, { recursive: true })
     }
 
     async createFile (relativePath: string, mode: number, size: number): Promise<FileDownload> {
-        const fullPath = path.join(this.basePath, relativePath)
-        await fs.mkdir(path.dirname(fullPath), { recursive: true })
+        const fullPath = this.basePath + '/' + relativePath
+        const dirName: string = await this.electron.ipc.invoke('bridge:path:dirname', fullPath)
+        await this.electron.ipc.invoke('bridge:fs:mkdir', dirName, { recursive: true })
 
         const fileDownload = new ElectronFileDownload(fullPath, mode, size, this.electron)
         await wrapPromise(this.zone, fileDownload.open())
@@ -496,6 +454,6 @@ class ElectronDirectoryDownload extends DirectoryDownload {
     }
 
     close (): void {
-        this.electron.powerSaveBlocker.stop(this.powerSaveBlocker)
+        this.powerSaveBlocker.then(id => this.electron.stopPowerSaveBlocker(id))
     }
 }

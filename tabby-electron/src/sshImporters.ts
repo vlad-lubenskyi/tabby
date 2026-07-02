@@ -96,9 +96,9 @@ function resolveSSHIncludePath (value: string): string {
         return value
     }
     if (value.startsWith('~')) {
-        return path.join(process.env.HOME ?? '~', value.slice(1))
+        return path.join((window as any).tabbyAPI.env.HOME ?? '~', value.slice(1))
     }
-    return path.join(process.env.HOME ?? '~', '.ssh', value)
+    return path.join((window as any).tabbyAPI.env.HOME ?? '~', '.ssh', value)
 }
 
 interface ParsedSSHConfig {
@@ -276,7 +276,7 @@ async function convertHostToSSHProfile (host: string, settings: Record<string, s
                 const processedKeys: string [] = (settings[key] as string[]).map( s => {
                     let retVal: string = s
                     if (s.startsWith('~/')) {
-                        retVal = path.join(process.env.HOME ?? '~', s.slice(2))
+                        retVal = path.join((window as any).tabbyAPI.env.HOME ?? '~', s.slice(2))
                     }
                     return retVal
                 })
@@ -382,7 +382,7 @@ export class OpenSSHImporter extends SSHProfileImporter {
 
     constructor (electron: ElectronService) {
         super()
-        this.diskCachePath = path.join(electron.app.getPath('userData'), 'ssh-profiles-cache.json')
+        this.diskCachePath = path.join(electron.userDataPath, 'ssh-profiles-cache.json')
     }
 
     async getProfiles (): Promise<PartialProfile<SSHProfile>[]> {
@@ -390,7 +390,7 @@ export class OpenSSHImporter extends SSHProfileImporter {
             return _openSSHCachePromise
         }
 
-        const configPath = path.join(process.env.HOME ?? '~', '.ssh', 'config')
+        const configPath = path.join((window as any).tabbyAPI.env.HOME ?? '~', '.ssh', 'config')
 
         _openSSHCachePromise = (async () => {
             try {
@@ -442,7 +442,7 @@ export class StaticFileImporter extends SSHProfileImporter {
         electron: ElectronService,
     ) {
         super()
-        this.configPath = path.join(electron.app.getPath('userData'), 'ssh-profiles.yaml')
+        this.configPath = path.join(electron.userDataPath, 'ssh-profiles.yaml')
     }
 
     async getProfiles (): Promise<PartialProfile<SSHProfile>[]> {
@@ -470,7 +470,7 @@ export class StaticFileImporter extends SSHProfileImporter {
 export class PrivateKeyLocator extends AutoPrivateKeyLocator {
     async getKeys (): Promise<[string, Buffer][]> {
         const results: [string, Buffer][] = []
-        const keysPath = path.join(process.env.HOME!, '.ssh')
+        const keysPath = path.join((window as any).tabbyAPI.env.HOME ?? '~', '.ssh')
         if (!fsSync.existsSync(keysPath)) {
             return results
         }

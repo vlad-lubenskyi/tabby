@@ -10,11 +10,12 @@ export class ElectronHostAppService extends HostAppService {
     }
 
     get configPlatform (): Platform {
+        const p = (window as any).tabbyAPI?.platform ?? 'linux'
         return {
             win32: Platform.Windows,
             darwin: Platform.macOS,
             linux: Platform.Linux,
-        }[process.platform]
+        }[p] ?? Platform.Linux
     }
 
     constructor (
@@ -24,9 +25,9 @@ export class ElectronHostAppService extends HostAppService {
     ) {
         super(injector)
 
-        electron.ipcRenderer.on('host:preferences-menu', () => this.zone.run(() => this.settingsUIRequest.next()))
+        electron.ipc.on('host:preferences-menu', () => this.zone.run(() => this.settingsUIRequest.next()))
 
-        electron.ipcRenderer.on('cli', (_$event, argv: any, cwd: string, secondInstance: boolean) => this.zone.run(async () => {
+        electron.ipc.on('cli', (argv: any, cwd: string, secondInstance: boolean) => this.zone.run(async () => {
             const event = { argv, cwd, secondInstance }
             this.logger.info('CLI arguments received:', event)
 
@@ -45,43 +46,43 @@ export class ElectronHostAppService extends HostAppService {
             }
         }))
 
-        electron.ipcRenderer.on('host:config-change', () => this.zone.run(() => {
+        electron.ipc.on('host:config-change', () => this.zone.run(() => {
             this.configChangeBroadcast.next()
         }))
 
         if (isWindowsBuild(WIN_BUILD_FLUENT_BG_SUPPORTED)) {
-            electron.ipcRenderer.send('window-set-disable-vibrancy-while-dragging', true)
+            electron.ipc.send('window-set-disable-vibrancy-while-dragging', true)
         }
     }
 
     newWindow (): void {
-        this.electron.ipcRenderer.send('app:new-window')
+        this.electron.ipc.send('app:new-window')
     }
 
     async saveConfig (data: string): Promise<void> {
-        await this.electron.ipcRenderer.invoke('app:save-config', data)
+        await this.electron.ipc.invoke('app:save-config', data)
     }
 
     emitReady (): void {
-        this.electron.ipcRenderer.send('app:ready')
+        this.electron.ipc.send('app:ready')
     }
 
-    relaunch (): void {
-        const isPortable = !!process.env.PORTABLE_EXECUTABLE_FILE
+    async relaunch (): Promise<void> {
+        const isPortable = !!this.electron.portableExecutableFile
         if (isPortable) {
-            this.electron.app.relaunch({ execPath: process.env.PORTABLE_EXECUTABLE_FILE })
+            await this.electron.relaunch({ execPath: this.electron.portableExecutableFile ?? undefined })
         } else {
             let args: string[] = []
             if (this.platform === Platform.Linux) {
                 args = ['--no-sandbox']
             }
-            this.electron.app.relaunch({ args })
+            await this.electron.relaunch({ args })
         }
-        this.electron.app.exit()
+        await this.electron.exit()
     }
 
-    quit (): void {
+    async quit (): Promise<void> {
         this.logger.info('Quitting')
-        this.electron.app.quit()
+        await this.electron.quit()
     }
 }

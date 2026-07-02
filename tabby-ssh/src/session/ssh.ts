@@ -36,7 +36,7 @@ type AuthMethod = {
 } | {
     type: 'publickey'
     name: string
-    contents: Buffer
+    contents: Uint8Array
 } | ({
     type: 'agent',
     publicKey?: russh.SshPublicKey
@@ -150,7 +150,7 @@ export class SSHSession {
         })
     }
 
-    private addPublicKeyAuthMethod (name: string, contents: Buffer) {
+    private addPublicKeyAuthMethod (name: string, contents: Uint8Array) {
         this.allAuthMethods.push({
             type: 'publickey',
             name,
@@ -164,7 +164,7 @@ export class SSHSession {
             if (this.profile.options.privateKeys.length) {
                 for (let pk of this.profile.options.privateKeys) {
                     // eslint-disable-next-line @typescript-eslint/init-declarations
-                    let contents: Buffer
+                    let contents: Uint8Array
                     pk = pk.replace('%h', this.profile.options.host)
                     pk = pk.replace('%r', this.profile.options.user)
                     try {
@@ -179,7 +179,7 @@ export class SSHSession {
                     // skip it here and warn the user instead of treating it as a
                     // private key.
                     try {
-                        russh.parsePublicKey(contents.toString('utf-8'))
+                        russh.parsePublicKey(new TextDecoder().decode(contents))
                         this.emitServiceMessage(
                             colors.bgYellow.yellow.black(' ! ') +
                             ` Expected a private key, but ${pk} appears to be a public key. Skipping it for private key authentication.`,
@@ -220,7 +220,7 @@ export class SSHSession {
 
                         try {
                             const pubKeyContent = await this.fileProviders.retrieveFile(pubKeyPath)
-                            const publicKey = russh.parsePublicKey(pubKeyContent.toString('utf-8'))
+                            const publicKey = russh.parsePublicKey(new TextDecoder().decode(pubKeyContent))
                             this.allAuthMethods.push({
                                 type: 'agent',
                                 ...spec,
@@ -929,8 +929,8 @@ export class SSHSession {
         })
     }
 
-    async loadPrivateKey (name: string, privateKeyContents: Buffer): Promise<russh.KeyPair> {
-        this.activePrivateKey = await this.loadPrivateKeyWithPassphraseMaybe(privateKeyContents.toString())
+    async loadPrivateKey (name: string, privateKeyContents: Uint8Array): Promise<russh.KeyPair> {
+        this.activePrivateKey = await this.loadPrivateKeyWithPassphraseMaybe(new TextDecoder().decode(privateKeyContents))
         return this.activePrivateKey
     }
 

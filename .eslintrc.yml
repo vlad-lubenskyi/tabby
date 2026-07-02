@@ -22,6 +22,48 @@ overrides:
     sourceType: module
     ecmaVersion: latest
 
+# Renderer plugin packages run in the sandboxed renderer — process/node globals are forbidden.
+# Any use of process.* in these files must fail the linter (and by extension CI).
+- files:
+  - 'tabby-*/src/**/*.ts'
+  env:
+    node: false
+  rules:
+    no-restricted-globals:
+    - error
+    - name: process
+      message: 'process is not available in the sandboxed renderer. Use window.tabbyAPI.platform/env/arch/devMode/portableExecutableFile/exePath instead.'
+    - name: __dirname
+      message: 'Not available in the sandboxed renderer.'
+    - name: __filename
+      message: 'Not available in the sandboxed renderer.'
+    - name: Buffer
+      message: 'Not available in the sandboxed renderer.'
+    no-restricted-imports:
+    - error
+    - paths:
+      - name: fs
+        message: 'Node.js fs is not available in the renderer. Use bridge:fs:* / bridge:file:* IPC channels instead.'
+      - name: mz/fs
+        message: 'Node.js fs is not available in the renderer. Use bridge:fs:* / bridge:file:* IPC channels instead.'
+      - name: path
+        message: 'Node.js path is not available in the renderer. Use string helpers or bridge:path:* IPC channels instead.'
+      - name: os
+        message: 'Node.js os is not available in the renderer. Use window.tabbyAPI.platform/osRelease instead.'
+      - name: http
+        message: 'Node.js http is not available in the renderer.'
+      - name: https
+        message: 'Node.js https is not available in the renderer.'
+      - name: net
+        message: 'Node.js net is not available in the renderer.'
+      - name: child_process
+        message: 'Node.js child_process is not available in the renderer.'
+      - name: mixpanel
+        message: 'The mixpanel server SDK uses Node.js http. Use mixpanel-browser for browser/renderer contexts.'
+      patterns:
+      - group: ['node:*']
+        message: 'Node.js built-in modules are not available in the sandboxed renderer.'
+
 - files: '*.ts'
   parser: '@typescript-eslint/parser'
   parserOptions:

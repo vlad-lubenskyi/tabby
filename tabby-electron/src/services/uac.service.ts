@@ -1,8 +1,15 @@
 import { Injectable } from '@angular/core'
-import * as path from 'path'
 import { WIN_BUILD_CONPTY_SUPPORTED, isWindowsBuild } from 'tabby-core'
 import { SessionOptions, UACService } from 'tabby-local'
 import { ElectronService } from './electron.service'
+
+function pathDirname (p: string): string {
+    // Works for both Windows and POSIX paths
+    const sep = p.includes('\\') ? '\\' : '/'
+    const parts = p.split(sep)
+    parts.pop()
+    return parts.join(sep)
+}
 
 /** @hidden */
 @Injectable()
@@ -15,20 +22,11 @@ export class ElectronUACService extends UACService {
     }
 
     patchSessionOptionsForUAC (sessionOptions: SessionOptions): SessionOptions {
-        let helperPath = path.join(
-            path.dirname(this.electron.app.getPath('exe')),
-            'resources',
-            'extras',
-            'UAC.exe',
-        )
+        const exeDir = pathDirname(this.electron.exePath)
+        let helperPath = exeDir + '\\resources\\extras\\UAC.exe'
 
-        if (process.env.TABBY_DEV) {
-            helperPath = path.join(
-                path.dirname(this.electron.app.getPath('exe')),
-                '..', '..', '..',
-                'extras',
-                'UAC.exe',
-            )
+        if (this.electron.devMode) {
+            helperPath = exeDir + '\\..\\..\\..\\extras\\UAC.exe'
         }
 
         const options = { ...sessionOptions }

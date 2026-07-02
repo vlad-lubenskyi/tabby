@@ -4,6 +4,27 @@ import { ipcMain } from 'electron'
 import { Application } from './app'
 import { UTF8Splitter } from './utfSplitter'
 import { Subject, debounceTime } from 'rxjs'
+/* eslint-disable block-scoped-var */
+let psNode: any = null
+try {
+    // eslint-disable-next-line no-var
+    psNode = require('ps-node')
+} catch { }
+try {
+    // eslint-disable-next-line no-var
+    var macOSNativeProcessList = require('macos-native-processlist')
+} catch { }
+
+try {
+    // eslint-disable-next-line no-var
+    var windowsProcessTree = require('@tabby-gang/windows-process-tree')
+} catch { }
+/* eslint-enable block-scoped-var */
+
+let getWorkingDirectoryFromPID: ((pid: number) => string | null) | null = null
+try {
+    getWorkingDirectoryFromPID = require('native-process-working-directory').getWorkingDirectoryFromPID
+} catch { }
 
 class PTYDataQueue {
     private buffers: Buffer[] = []
@@ -141,19 +162,18 @@ export class PTYManager {
     private ptys: Record<string, PTY|undefined> = {}
 
     init (app: Application): void {
-        ipcMain.on('pty:spawn', (event, ...options) => {
+        ipcMain.removeHandler('pty:spawn')
+        ipcMain.handle('pty:spawn', (_event, ...options) => {
             const id = uuidv4().toString()
-            event.returnValue = id
             this.ptys[id] = new PTY(id, app, ...options)
+            return id
         })
 
-        ipcMain.on('pty:exists', (event, id) => {
-            event.returnValue = this.ptys[id] && !this.ptys[id].exited
-        })
+        ipcMain.removeHandler('pty:exists')
+        ipcMain.handle('pty:exists', (_event, id) => !!(this.ptys[id] && !this.ptys[id].exited))
 
-        ipcMain.on('pty:get-pid', (event, id) => {
-            event.returnValue = this.ptys[id]?.getPID()
-        })
+        ipcMain.removeHandler('pty:get-pid')
+        ipcMain.handle('pty:get-pid', (_event, id) => this.ptys[id]?.getPID() ?? null)
 
         ipcMain.on('pty:resize', (_event, id, columns, rows) => {
             this.ptys[id]?.resize(columns, rows)
@@ -169,6 +189,56 @@ export class PTYManager {
 
         ipcMain.on('pty:ack-data', (_event, id, length) => {
             this.ptys[id]?.ackData(length)
+        })
+
+        ipcMain.removeHandler('pty:get-child-processes')
+        ipcMain.handle('pty:get-child-processes', async (_event, truePID: number) => {
+            if (process.platform === 'darwin') {
+                const processes = await macOSNativeProcessList.getProcessList()  // eslint-disable-line block-scoped-var
+                return processes.filter(x => x.ppid === truePID).map(p => ({
+                    pid: p.pid,
+                    ppid: p.ppid,
+                    command: p.name,
+                }))
+            }
+            if (process.platform === 'win32') {
+                return new Promise(resolve => {
+                    windowsProcessTree.getProcessTree(truePID, tree => {  // eslint-disable-line block-scoped-var
+                        resolve(tree ? tree.children.map(child => ({
+                            pid: child.pid,
+                            ppid: tree.pid,
+                            command: child.name,
+                        })) : [])
+                    })
+                })
+            }
+            if (!psNode) {
+                return []
+            }
+            return new Promise((resolve, reject) => {
+                psNode.lookup({ ppid: truePID }, (err, processes) => {
+                    if (err) {
+                        reject(err)
+                        return
+                    }
+                    resolve(processes.map((p: any) => ({
+                        pid: Number(p.pid),
+                        ppid: Number(p.ppid),
+                        command: p.command,
+                    })))
+                })
+            })
+        })
+
+        ipcMain.removeHandler('pty:get-working-directory')
+        ipcMain.handle('pty:get-working-directory', (_event, pid: number) => {
+            if (!getWorkingDirectoryFromPID) { return null } // eslint-disable-line block-scoped-var
+            try {
+                return getWorkingDirectoryFromPID(pid) // eslint-disable-line block-scoped-var
+            } catch {
+                // Process already exited — expected race condition, not an error
+                return null
+            }
         })
     }
 }

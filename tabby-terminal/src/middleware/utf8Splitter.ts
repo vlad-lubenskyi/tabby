@@ -8,7 +8,7 @@ import { SessionMiddleware } from '../api/middleware'
 export class UTF8SplitterMiddleware extends SessionMiddleware {
     private decoder = new UTF8Splitter()
 
-    feedFromSession (data: Buffer): void {
+    feedFromSession (data: Uint8Array): void {
         super.feedFromSession(this.decoder.write(data))
     }
 

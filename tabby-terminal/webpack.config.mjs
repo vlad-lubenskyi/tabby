@@ -10,6 +10,8 @@ export default () => {
         dirname: __dirname,
         externals: [
             'opentype.js',
+            '@xterm/addon-ligatures',
+            'hexer',
         ],
         rules: [
             {

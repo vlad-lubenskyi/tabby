@@ -1,3 +1,4 @@
+declare const require: (module: string) => any
 import { Injectable, Pipe, PipeTransform } from '@angular/core'
 import { formatDate, registerLocaleData } from '@angular/common'
 import { TranslateService, MissingTranslationHandler } from '@ngx-translate/core'

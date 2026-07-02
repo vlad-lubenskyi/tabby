@@ -1,3 +1,4 @@
+declare const require: (module: string) => any
 import { Observable, Subject, first, auditTime, debounce, interval } from 'rxjs'
 import { Spinner } from 'cli-spinner'
 import colors from 'ansi-colors'
@@ -17,8 +18,14 @@ import { getTerminalBackgroundColor } from '../helpers'
 
 
 const INACTIVE_TAB_UNLOAD_DELAY = 1000 * 30
-const OSC_FOCUS_IN = Buffer.from('\x1b[I')
-const OSC_FOCUS_OUT = Buffer.from('\x1b[O')
+const OSC_FOCUS_IN = new Uint8Array([0x1b, 0x5b, 0x49])  // ESC [ I
+const OSC_FOCUS_OUT = new Uint8Array([0x1b, 0x5b, 0x4f]) // ESC [ O
+
+function _arraysEqual (a: Uint8Array, b: Uint8Array): boolean {
+    if (a.length !== b.length) return false
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+    return true
+}
 
 /**
  * A class to base your custom terminal tabs on
@@ -133,7 +140,7 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
 
     protected logger: Logger
     protected output = new Subject<string>()
-    protected binaryOutput = new Subject<Buffer>()
+    protected binaryOutput = new Subject<Uint8Array>()
     protected sessionChanged = new Subject<BaseSession|null>()
     protected recentInputs = ''
     private bellPlayer: HTMLAudioElement
@@ -162,7 +169,7 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
 
     private frontendWriteLock = Promise.resolve()
 
-    get input$ (): Observable<Buffer> {
+    get input$ (): Observable<Uint8Array> {
         if (!this.frontend) {
             throw new Error('Frontend not ready')
         }
@@ -170,7 +177,7 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
     }
 
     get output$ (): Observable<string> { return this.output }
-    get binaryOutput$ (): Observable<Buffer> { return this.binaryOutput }
+    get binaryOutput$ (): Observable<Uint8Array> { return this.binaryOutput }
 
     get resize$ (): Observable<ResizeEvent> {
         if (!this.frontend) {
@@ -218,7 +225,7 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
             }
             if (hotkey === 'search') {
                 this.showSearchPanel = true
-                setImmediate(() => {
+                setTimeout(() => {
                     const input = this.element.nativeElement.querySelector('.search-input')
                     const selectedText = (this.frontend?.getSelection() ?? '').trim()
                     if (input && selectedText.length) {
@@ -405,7 +412,7 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
             this.alternateScreenActive = x
         })
 
-        setImmediate(async () => {
+        setTimeout(async () => {
             if (this.hasFocus) {
                 await this.frontend?.attach(this.content.nativeElement, this.profile)
                 this.frontend?.configure(this.profile)
@@ -481,12 +488,12 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
     /**
      * Feeds input into the active session
      */
-    sendInput (data: string|Buffer): void {
-        if (!(data instanceof Buffer)) {
-            data = Buffer.from(data, 'utf-8')
+    sendInput (data: string|Uint8Array): void {
+        if (typeof data === 'string') {
+            data = new TextEncoder().encode(data)
         }
         this.session?.feedFromTerminal(data)
-        if (this.config.store.terminal.scrollOnInput && !data.equals(OSC_FOCUS_IN) && !data.equals(OSC_FOCUS_OUT)) {
+        if (this.config.store.terminal.scrollOnInput && !_arraysEqual(data, OSC_FOCUS_IN) && !_arraysEqual(data, OSC_FOCUS_OUT)) {
             this.frontend?.scrollToBottom()
         }
     }

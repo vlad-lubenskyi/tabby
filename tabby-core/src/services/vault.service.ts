@@ -1,5 +1,3 @@
-import * as crypto from 'crypto'
-import { promisify } from 'util'
 import { Injectable, NgZone } from '@angular/core'
 import { NgbModal } from '@ng-bootstrap/ng-bootstrap'
 import { AsyncSubject, Subject, Observable } from 'rxjs'
@@ -11,9 +9,7 @@ import { FileProvider } from '../api/fileProvider'
 import { PlatformService } from '../api/platform'
 
 const PBKDF_ITERATIONS = 100000
-const PBKDF_DIGEST = 'sha512'
 const PBKDF_SALT_LENGTH = 64 / 8
-const CRYPT_ALG = 'aes-256-cbc'
 const CRYPT_KEY_LENGTH = 256 / 8
 const CRYPT_IV_LENGTH = 128 / 8
 
@@ -52,30 +48,58 @@ function migrateVaultContent (content: any): Vault {
     }
 }
 
-function deriveVaultKey (passphrase: string, salt: Buffer): Promise<Buffer> {
-    return promisify(crypto.pbkdf2)(
-        Buffer.from(passphrase),
-        salt,
-        PBKDF_ITERATIONS,
-        CRYPT_KEY_LENGTH,
-        PBKDF_DIGEST,
+function hexToBytes (hex: string): Uint8Array {
+    const arr = new Uint8Array(hex.length / 2)
+    for (let i = 0; i < hex.length; i += 2) {
+        arr[i / 2] = parseInt(hex.slice(i, i + 2), 16)
+    }
+    return arr
+}
+
+function bytesToHex (bytes: Uint8Array): string {
+    return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+async function deriveVaultKey (passphrase: string, salt: Uint8Array): Promise<CryptoKey> {
+    const enc = new TextEncoder()
+    const baseKey = await globalThis.crypto.subtle.importKey(
+        'raw',
+        enc.encode(passphrase),
+        'PBKDF2',
+        false,
+        ['deriveKey'],
+    )
+    return globalThis.crypto.subtle.deriveKey(
+        {
+            name: 'PBKDF2',
+            salt,
+            iterations: PBKDF_ITERATIONS,
+            hash: 'SHA-512',
+        },
+        baseKey,
+        { name: 'AES-CBC', length: CRYPT_KEY_LENGTH * 8 },
+        false,
+        ['encrypt', 'decrypt'],
     )
 }
 
 async function encryptVault (content: Vault, passphrase: string): Promise<StoredVault> {
-    const keySalt = await promisify(crypto.randomBytes)(PBKDF_SALT_LENGTH)
-    const iv = await promisify(crypto.randomBytes)(CRYPT_IV_LENGTH)
+    const keySalt = globalThis.crypto.getRandomValues(new Uint8Array(PBKDF_SALT_LENGTH))
+    const iv = globalThis.crypto.getRandomValues(new Uint8Array(CRYPT_IV_LENGTH))
     const key = await deriveVaultKey(passphrase, keySalt)
 
-    const plaintext = JSON.stringify(content)
-    const cipher = crypto.createCipheriv(CRYPT_ALG, key, iv)
-    const encrypted = Buffer.concat([cipher.update(plaintext, 'utf-8'), cipher.final()])
+    const plaintext = new TextEncoder().encode(JSON.stringify(content))
+    const encrypted = new Uint8Array(await globalThis.crypto.subtle.encrypt(
+        { name: 'AES-CBC', iv },
+        key,
+        plaintext,
+    ))
 
     return {
         version: 1,
-        contents: encrypted.toString('base64'),
-        keySalt: keySalt.toString('hex'),
-        iv: iv.toString('hex'),
+        contents: btoa(String.fromCharCode(...encrypted)),
+        keySalt: bytesToHex(keySalt),
+        iv: bytesToHex(iv),
     }
 }
 
@@ -83,14 +107,17 @@ async function decryptVault (vault: StoredVault, passphrase: string): Promise<Va
     if (vault.version !== 1) {
         throw new Error(`Unsupported vault format version ${vault.version}`)
     }
-    const keySalt = Buffer.from(vault.keySalt, 'hex')
-    const key = await deriveVaultKey(passphrase, keySalt)
-    const iv = Buffer.from(vault.iv, 'hex')
-    const encrypted = Buffer.from(vault.contents, 'base64')
+    const keySalt = hexToBytes(vault.keySalt)
+    const iv = hexToBytes(vault.iv)
+    const encrypted = Uint8Array.from(atob(vault.contents), c => c.charCodeAt(0))
 
-    const decipher = crypto.createDecipheriv(CRYPT_ALG, key, iv)
-    const plaintext = decipher.update(encrypted, undefined, 'utf-8') + decipher.final('utf-8')
-    return migrateVaultContent(JSON.parse(plaintext))
+    const key = await deriveVaultKey(passphrase, keySalt)
+    const decrypted = await globalThis.crypto.subtle.decrypt(
+        { name: 'AES-CBC', iv },
+        key,
+        encrypted,
+    )
+    return migrateVaultContent(JSON.parse(new TextDecoder().decode(decrypted)))
 }
 
 export const VAULT_SECRET_TYPE_FILE = 'file'
@@ -145,7 +172,7 @@ export class VaultService {
             return await wrapPromise(this.zone, decryptVault(storage, passphrase))
         } catch (e) {
             this.forgetPassphrase()
-            if (e.toString().includes('BAD_DECRYPT')) {
+            if (e instanceof DOMException || e.toString().includes('BAD_DECRYPT')) {
                 this.notifications.error('Incorrect passphrase')
             }
             throw e
@@ -264,7 +291,6 @@ export class VaultFileProvider extends FileProvider {
         private vault: VaultService,
         private platform: PlatformService,
         private selector: SelectorService,
-        private zone: NgZone,
     ) {
         super()
     }
@@ -305,19 +331,20 @@ export class VaultFileProvider extends FileProvider {
             throw new Error('Nothing selected')
         }
         const transfer = transfers[0]
-        const id = (await wrapPromise(this.zone, promisify(crypto.randomBytes)(32))).toString('hex')
+        const idBytes = globalThis.crypto.getRandomValues(new Uint8Array(32))
+        const id = bytesToHex(idBytes)
         await this.vault.addSecret({
             type: VAULT_SECRET_TYPE_FILE,
             key: {
                 id,
                 description: `${description} (${transfer.getName()})`,
             },
-            value: Buffer.from(await transfer.readAll()).toString('base64'),
+            value: btoa(String.fromCharCode(...new Uint8Array(await transfer.readAll()))),
         })
         return `${this.prefix}${id}`
     }
 
-    async retrieveFile (key: string): Promise<Buffer> {
+    async retrieveFile (key: string): Promise<Uint8Array> {
         if (!key.startsWith(this.prefix)) {
             throw new Error('Incorrect type')
         }
@@ -325,6 +352,6 @@ export class VaultFileProvider extends FileProvider {
         if (!secret) {
             throw new Error('Not found')
         }
-        return Buffer.from(secret.value, 'base64')
+        return Uint8Array.from(atob(secret.value), c => c.charCodeAt(0))
     }
 }

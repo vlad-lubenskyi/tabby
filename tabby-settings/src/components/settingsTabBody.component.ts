@@ -22,7 +22,7 @@ export class SettingsTabBodyComponent {
 
     ngAfterViewInit (): void {
         // run after the change detection finishes
-        setImmediate(() => {
+        setTimeout(() => {
             this.component = this.placeholder.createComponent(
                 this.componentFactoryResolver.resolveComponentFactory(
                     this.provider.getComponentType(),

@@ -1,5 +1,4 @@
 import { app, ipcMain, Menu, Tray, shell, screen, globalShortcut, MenuItemConstructorOptions, WebContents } from 'electron'
-import promiseIpc from 'electron-promise-ipc'
 import * as remote from '@electron/remote/main'
 import { spawnSync } from 'child_process'
 import { exec } from 'mz/child_process'
@@ -11,6 +10,7 @@ import { saveConfig } from './config'
 import { Window, WindowOptions } from './window'
 import { pluginManager } from './pluginManager'
 import { PTYManager } from './pty'
+import { initBridge } from './bridge'
 
 /* eslint-disable block-scoped-var */
 
@@ -30,8 +30,19 @@ export class Application {
     // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
     constructor (private configStore: any) {
         remote.initialize()
+        initBridge()
         this.useBuiltinGraphics()
         this.ptyManager.init(this)
+
+        // Preload queries this synchronously via ipcRenderer.sendSync before contextBridge is set up.
+        ipcMain.on('app:get-paths', event => {
+            event.returnValue = {
+                appPath: app.getAppPath(),
+                appVersion: app.getVersion(),
+                userDataPath: app.getPath('userData'),
+                exePath: app.getPath('exe'),
+            }
+        })
 
         ipcMain.handle('app:save-config', async (event, config) => {
             await saveConfig(config)
@@ -52,15 +63,15 @@ export class Application {
             this.onGlobalHotkey()
         })
 
-        ;(promiseIpc as any).on('plugin-manager:install', (name, version) => {
+        ipcMain.handle('plugin-manager:install', (_event, name, version) => {
             return pluginManager.install(this.userPluginsPath, name, version)
         })
 
-        ;(promiseIpc as any).on('plugin-manager:uninstall', (name) => {
+        ipcMain.handle('plugin-manager:uninstall', (_event, name) => {
             return pluginManager.uninstall(this.userPluginsPath, name)
         })
 
-        ;(promiseIpc as any).on('get-default-mac-shell', async () => {
+        ipcMain.handle('get-default-mac-shell', async () => {
             try {
                 return (await exec(`/usr/bin/dscl . -read /Users/${process.env.LOGNAME} UserShell`))[0].toString().split(' ')[1].trim()
             } catch {

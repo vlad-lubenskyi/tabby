@@ -1,3 +1,4 @@
+declare const require: (module: string) => any
 import { Directive, Output, ElementRef, EventEmitter, AfterViewInit } from '@angular/core'
 import { DirectoryUpload, PlatformService } from '../api/platform'
 import './dropZone.directive.scss'

@@ -65,10 +65,10 @@ export class Window {
             minWidth: 400,
             minHeight: 300,
             webPreferences: {
-                nodeIntegration: true,
+                nodeIntegration: false,
+                contextIsolation: true,
                 preload: path.join(__dirname, 'sentry.js'),
                 backgroundThrottling: false,
-                contextIsolation: false,
             },
             maximizable: true,
             frame: false,
@@ -145,6 +145,15 @@ export class Window {
         })
 
         enableRemote(this.window.webContents)
+
+        // Forward renderer console output to main-process stdout for debugging
+        const LEVEL_LABELS = ['', 'W', 'E', 'D']
+        this.window.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+            const label = LEVEL_LABELS[level] ?? String(level)
+            const src = sourceId ? ` (${sourceId.split('/').pop()}:${line})` : ''
+            const tag = label ? `[RENDERER:${label}]` : '[RENDERER]'
+            ;(level === 3 ? console.error : level === 2 ? console.error : console.log)(`${tag}${src} ${message}`)
+        })
 
         this.window.loadFile(path.join(app.getAppPath(), 'dist', 'index.html'))
 

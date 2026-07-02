@@ -880,11 +880,11 @@ export class SplitTabComponent extends BaseTabComponent implements AfterViewInit
     }
 
     private onAfterTabAdded (tab: BaseTabComponent) {
-        setImmediate(() => {
+        setTimeout(() => {
             this.layout()
             this.tabAdded.next(tab)
             this.focus(tab)
-        })
+        }, 0)
     }
 
     private layoutInternal (root: SplitContainer, x: number, y: number, w: number, h: number) {

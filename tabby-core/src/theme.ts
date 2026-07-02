@@ -1,3 +1,4 @@
+declare const require: (module: string) => any
 import { marker as _ } from '@biesbjerg/ngx-translate-extract-marker'
 import { Injectable } from '@angular/core'
 import { Theme } from './api'

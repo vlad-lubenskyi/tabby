@@ -1,6 +1,5 @@
 import { Injectable } from '@angular/core'
 import { TerminalDecorator, BaseTerminalTabComponent, BaseTerminalProfile } from 'tabby-terminal'
-import { webUtils } from 'electron'
 import { ShellType, TerminalTabComponent } from 'tabby-local'
 
 /** @hidden */
@@ -13,7 +12,7 @@ export class PathDropDecorator extends TerminalDecorator {
             }))
             this.subscribeUntilDetached(terminal, terminal.frontend?.drop$.subscribe((event: DragEvent) => {
                 for (const file of event.dataTransfer!.files as unknown as Iterable<File>) {
-                    this.injectPath(terminal, webUtils.getPathForFile(file))
+                    this.injectPath(terminal, (window as any).tabbyAPI.getPathForFile(file))
                 }
                 event.preventDefault()
             }))

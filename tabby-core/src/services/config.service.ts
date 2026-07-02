@@ -1,3 +1,4 @@
+declare const require: (module: string) => any
 import deepClone from 'clone-deep'
 import deepEqual from 'deep-equal'
 import { v4 as uuidv4 } from 'uuid'

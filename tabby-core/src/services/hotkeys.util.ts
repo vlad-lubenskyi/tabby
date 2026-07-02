@@ -1,15 +1,21 @@
 /* eslint-disable @typescript-eslint/no-type-alias */
-export const metaKeyName = {
+
+// Platform is read from window.tabbyAPI (exposed by the preload via contextBridge)
+// which is guaranteed to be set before any renderer module runs.
+// Falls back to 'linux' in non-browser contexts (e.g. Node.js build environment).
+const _platform: string = (typeof window !== 'undefined' ? (window as any).tabbyAPI?.platform : null) ?? 'linux'
+
+export const metaKeyName: string = ({
     darwin: '⌘',
     win32: 'Win',
     linux: 'Super',
-}[process.platform]
+} as Record<string, string>)[_platform] ?? 'Super'
 
-export const altKeyName = {
+export const altKeyName: string = ({
     darwin: '⌥',
     win32: 'Alt',
     linux: 'Alt',
-}[process.platform]
+} as Record<string, string>)[_platform] ?? 'Alt'
 
 export interface KeyEventData {
     ctrlKey?: boolean

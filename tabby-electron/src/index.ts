@@ -1,7 +1,6 @@
 import { NgModule } from '@angular/core'
 import { PlatformService, LogService, UpdaterService, DockingService, HostAppService, ThemesService, Platform, AppService, ConfigService, WIN_BUILD_FLUENT_BG_SUPPORTED, isWindowsBuild, HostWindowService, HotkeyProvider, ConfigProvider, FileProvider } from 'tabby-core'
 import { TerminalColorSchemeProvider, TerminalContextMenuItemProvider, TerminalDecorator } from 'tabby-terminal'
-import { SFTPContextMenuItemProvider, SSHProfileImporter, AutoPrivateKeyLocator } from 'tabby-ssh'
 import { PTYInterface, ShellProvider, UACService } from 'tabby-local'
 import { auditTime } from 'rxjs'
 
@@ -20,9 +19,7 @@ import { ElectronUACService } from './services/uac.service'
 
 import { ElectronHotkeyProvider } from './hotkeys'
 import { ElectronConfigProvider } from './config'
-import { EditSFTPContextMenu } from './sftpContextMenu'
 import { ExportTerminalContextMenu } from './terminalContextMenu'
-import { OpenSSHImporter, PrivateKeyLocator, StaticFileImporter } from './sshImporters'
 import { ElectronPTYInterface } from './pty'
 import { PathDropDecorator } from './pathDrop'
 
@@ -52,10 +49,6 @@ import { VSDevToolsProvider } from './shells/vs'
         { provide: HotkeyProvider, useClass: ElectronHotkeyProvider, multi: true },
         { provide: ConfigProvider, useClass: ElectronConfigProvider, multi: true },
         { provide: FileProvider, useClass: ElectronFileProvider, multi: true },
-        { provide: SFTPContextMenuItemProvider, useClass: EditSFTPContextMenu, multi: true },
-        { provide: SSHProfileImporter, useExisting: OpenSSHImporter, multi: true },
-        { provide: SSHProfileImporter, useExisting: StaticFileImporter, multi: true },
-        { provide: AutoPrivateKeyLocator, useExisting: PrivateKeyLocator, multi: true },
 
         { provide: ShellProvider, useClass: WindowsDefaultShellProvider, multi: true },
         { provide: ShellProvider, useClass: MacOSDefaultShellProvider, multi: true },
@@ -169,7 +162,7 @@ export default class ElectronModule {
             }
         })
 
-        this.electron.ipcRenderer.send('app:register-global-hotkey', specs)
+        this.electron.ipc.send('app:register-global-hotkey', specs)
     }
 
     private updateVibrancy () {
@@ -177,14 +170,14 @@ export default class ElectronModule {
         if (this.hostApp.platform === Platform.Windows && !isWindowsBuild(WIN_BUILD_FLUENT_BG_SUPPORTED)) {
             vibrancyType = null
         }
-        this.electron.ipcRenderer.send('window-set-vibrancy', this.config.store.appearance.vibrancy, vibrancyType)
+        this.electron.ipc.send('window-set-vibrancy', this.config.store.appearance.vibrancy, vibrancyType)
 
         this.hostWindow.setOpacity(this.config.store.appearance.opacity)
     }
 
     private updateDarkMode () {
         const colorSchemeMode = this.config.store.appearance.colorSchemeMode
-        this.electron.ipcRenderer.send('window-set-dark-mode', colorSchemeMode)
+        this.electron.ipc.send('window-set-dark-mode', colorSchemeMode)
     }
 
     private updateWindowControlsColor () {
@@ -193,7 +186,7 @@ export default class ElectronModule {
             return
         }
 
-        this.electron.ipcRenderer.send('window-set-window-controls-color', this.config.store.terminal.colorScheme)
+        this.electron.ipc.send('window-set-window-controls-color', this.config.store.terminal.colorScheme)
     }
 }
 

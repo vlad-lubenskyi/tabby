@@ -4,6 +4,16 @@ import { LoginScriptProcessor, LoginScriptsOptions } from './middleware/loginScr
 import { OSCProcessor } from './middleware/oscProcessing'
 import { SessionMiddlewareStack } from './api/middleware'
 
+const _dec = new TextDecoder()
+
+function concatUint8 (...arrays: Uint8Array[]): Uint8Array {
+    const total = arrays.reduce((n, a) => n + a.length, 0)
+    const result = new Uint8Array(total)
+    let offset = 0
+    for (const a of arrays) { result.set(a, offset); offset += a.length }
+    return result
+}
+
 /**
  * A session object for a [[BaseTerminalTabComponent]]
  * Extend this to implement custom I/O and process management for your terminal tab
@@ -13,16 +23,16 @@ export abstract class BaseSession {
     readonly oscProcessor = new OSCProcessor()
     readonly middleware = new SessionMiddlewareStack()
     protected output = new Subject<string>()
-    protected binaryOutput = new Subject<Buffer>()
+    protected binaryOutput = new Subject<Uint8Array>()
     protected closed = new Subject<void>()
     protected destroyed = new Subject<void>()
     protected loginScriptProcessor: LoginScriptProcessor | null = null
     protected reportedCWD?: string
-    private initialDataBuffer = Buffer.from('')
+    private initialDataBuffer = new Uint8Array(0)
     private initialDataBufferReleased = false
 
     get output$ (): Observable<string> { return this.output }
-    get binaryOutput$ (): Observable<Buffer> { return this.binaryOutput }
+    get binaryOutput$ (): Observable<Uint8Array> { return this.binaryOutput }
     get closed$ (): Observable<void> { return this.closed }
     get destroyed$ (): Observable<void> { return this.destroyed }
 
@@ -34,9 +44,9 @@ export abstract class BaseSession {
 
         this.middleware.outputToTerminal$.subscribe(data => {
             if (!this.initialDataBufferReleased) {
-                this.initialDataBuffer = Buffer.concat([this.initialDataBuffer, data])
+                this.initialDataBuffer = concatUint8(this.initialDataBuffer, data)
             } else {
-                this.output.next(data.toString())
+                this.output.next(_dec.decode(data))
                 this.binaryOutput.next(data)
             }
         })
@@ -44,19 +54,19 @@ export abstract class BaseSession {
         this.middleware.outputToSession$.subscribe(data => this.write(data))
     }
 
-    feedFromTerminal (data: Buffer): void {
+    feedFromTerminal (data: Uint8Array): void {
         this.middleware.feedFromTerminal(data)
     }
 
-    protected emitOutput (data: Buffer): void {
+    protected emitOutput (data: Uint8Array): void {
         this.middleware.feedFromSession(data)
     }
 
     releaseInitialDataBuffer (): void {
         this.initialDataBufferReleased = true
-        this.output.next(this.initialDataBuffer.toString())
+        this.output.next(_dec.decode(this.initialDataBuffer))
         this.binaryOutput.next(this.initialDataBuffer)
-        this.initialDataBuffer = Buffer.from('')
+        this.initialDataBuffer = new Uint8Array(0)
     }
 
     setLoginScriptsOptions (options: LoginScriptsOptions): void {
@@ -86,7 +96,7 @@ export abstract class BaseSession {
 
     abstract start (options: unknown): Promise<void>
     abstract resize (columns: number, rows: number): void
-    abstract write (data: Buffer): void
+    abstract write (data: Uint8Array): void
     abstract kill (signal?: string): void
     abstract gracefullyKillProcess (): Promise<void>
     abstract supportsWorkingDirectory (): boolean

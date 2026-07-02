@@ -50,6 +50,18 @@ const config = {
             assert: path.join(__dirname, 'node_modules/assert/assert.js'),
             constants: path.join(__dirname, 'node_modules/constants-browserify/constants.json'),
             util: path.join(__dirname, 'node_modules/util/util.js'),
+            // Explicitly block — build fails if renderer code imports these Node built-ins.
+            // Enable crypto: false only after vault.service.ts Web Crypto migration is confirmed
+            // in the web bundle (run webpack --profile to verify no transitive crypto importers).
+            fs: false,
+            net: false,
+            tls: false,
+            child_process: false,
+            dns: false,
+            http: false,
+            https: false,
+            path: false,
+            zlib: false,
         },
     },
     module: {

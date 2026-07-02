@@ -2,17 +2,17 @@ import { Subject, Observable } from 'rxjs'
 import { SubscriptionContainer } from 'tabby-core'
 
 export class SessionMiddleware {
-    get outputToSession$ (): Observable<Buffer> { return this.outputToSession }
-    get outputToTerminal$ (): Observable<Buffer> { return this.outputToTerminal }
+    get outputToSession$ (): Observable<Uint8Array> { return this.outputToSession }
+    get outputToTerminal$ (): Observable<Uint8Array> { return this.outputToTerminal }
 
-    protected outputToSession = new Subject<Buffer>()
-    protected outputToTerminal = new Subject<Buffer>()
+    protected outputToSession = new Subject<Uint8Array>()
+    protected outputToTerminal = new Subject<Uint8Array>()
 
-    feedFromSession (data: Buffer): void {
+    feedFromSession (data: Uint8Array): void {
         this.outputToTerminal.next(data)
     }
 
-    feedFromTerminal (data: Buffer): void {
+    feedFromTerminal (data: Uint8Array): void {
         this.outputToSession.next(data)
     }
 
@@ -57,11 +57,11 @@ export class SessionMiddlewareStack extends SessionMiddleware {
         this.relink()
     }
 
-    feedFromSession (data: Buffer): void {
+    feedFromSession (data: Uint8Array): void {
         this.stack[0].feedFromSession(data)
     }
 
-    feedFromTerminal (data: Buffer): void {
+    feedFromTerminal (data: Uint8Array): void {
         this.stack[this.stack.length - 1].feedFromTerminal(data)
     }
 

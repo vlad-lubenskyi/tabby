@@ -93,7 +93,7 @@ export class SSHService {
         for (const pk of profile.options.privateKeys) {
             let privateKeyContent: string|null = null
             const buffer = await this.fileProviders.retrieveFile(pk)
-            privateKeyContent = buffer.toString()
+            privateKeyContent = new TextDecoder().decode(buffer)
             await fs.writeFile(tmpFile.path, privateKeyContent)
             const keyHash = crypto.createHash('sha512').update(privateKeyContent).digest('hex')
             // need to pass an default passphrase, otherwise it might get stuck at the passphrase input

@@ -1,4 +1,4 @@
-import * as path from 'path'
+declare const require: (module: string) => any
 import { Injectable } from '@angular/core'
 import { HostAppService, Platform } from 'tabby-core'
 
@@ -18,7 +18,8 @@ export class CmderShellProvider extends ShellProvider {
             return []
         }
 
-        if (!process.env.CMDER_ROOT) {
+        const cmderRoot = (window as any).tabbyAPI.env.CMDER_ROOT
+        if (!cmderRoot) {
             return []
         }
 
@@ -29,7 +30,7 @@ export class CmderShellProvider extends ShellProvider {
                 command: 'cmd.exe',
                 args: [
                     '/k',
-                    path.join(process.env.CMDER_ROOT, 'vendor', 'init.bat'),
+                    cmderRoot + '\\vendor\\init.bat',
                 ],
                 icon: require('../icons/cmder.svg'),
                 env: {
@@ -48,7 +49,7 @@ export class CmderShellProvider extends ShellProvider {
                     '-noprofile',
                     '-noexit',
                     '-command',
-                    `Invoke-Expression '. ''${path.join(process.env.CMDER_ROOT, 'vendor', 'profile.ps1')}'''`,
+                    `Invoke-Expression '. ''${cmderRoot}\\vendor\\profile.ps1'''`,
                 ],
                 icon: require('../icons/cmder-powershell.svg'),
                 env: {},

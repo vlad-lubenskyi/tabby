@@ -1,8 +1,9 @@
-import * as fsSync from 'fs'
 import { Injectable } from '@angular/core'
 import { Logger, LogService, ConfigService, ProfilesService, PartialProfile } from 'tabby-core'
 import { TerminalTabComponent } from '../components/terminalTab.component'
 import { LocalProfile } from '../api'
+
+const ipc = () => (window as any).tabbyAPI?.ipc
 
 @Injectable({ providedIn: 'root' })
 export class TerminalService {
@@ -39,7 +40,7 @@ export class TerminalService {
 
         cwd = cwd ?? fullProfile.options.cwd
 
-        if (cwd && !fsSync.existsSync(cwd)) {
+        if (cwd && !(await ipc().invoke('bridge:fs:exists', cwd))) {
             console.warn('Ignoring non-existent CWD:', cwd)
             cwd = null
         }

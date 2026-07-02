@@ -18,7 +18,7 @@ export class FileProvidersService {
         })
     }
 
-    async retrieveFile (key: string): Promise<Buffer> {
+    async retrieveFile (key: string): Promise<Uint8Array> {
         for (const p of this.fileProviders) {
             try {
                 return await p.retrieveFile(key)

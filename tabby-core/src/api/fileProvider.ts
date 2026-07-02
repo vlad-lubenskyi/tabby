@@ -9,5 +9,5 @@ export abstract class FileProvider {
     }
 
     abstract selectAndStoreFile (description: string): Promise<string>
-    abstract retrieveFile (key: string): Promise<Buffer>
+    abstract retrieveFile (key: string): Promise<Uint8Array>
 }

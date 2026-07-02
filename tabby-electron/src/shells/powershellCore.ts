@@ -1,3 +1,4 @@
+declare const require: (module: string) => any
 import { Injectable } from '@angular/core'
 import { HostAppService, ConfigService, Platform } from 'tabby-core'
 

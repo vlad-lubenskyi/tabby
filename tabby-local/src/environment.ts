@@ -1,3 +1,5 @@
+declare const require: (module: string) => any
+
 let wnr: any = null
 
 try {
@@ -6,11 +8,11 @@ try {
 
 let cachedEnvironment: Record<string, string>|null = null
 
-/** Strips `undefined` values from a process-style environment object. */
-function normalizeEnv (env: Record<string, string|undefined>): Record<string, string> {
+/** Strips `undefined`/`null` values from an environment object. */
+function normalizeEnv (env: Record<string, string|undefined|null>): Record<string, string> {
     const result: Record<string, string> = {}
     for (const [key, value] of Object.entries(env)) {
-        if (value !== undefined) {
+        if (value != null) {
             result[key] = value
         }
     }
@@ -25,7 +27,7 @@ function findKey (env: Record<string, string>, name: string): string|undefined {
     if (name in env) {
         return name
     }
-    if (process.platform !== 'win32') {
+    if ((window as any).tabbyAPI.platform !== 'win32') {
         return undefined
     }
     const lower = name.toLowerCase()
@@ -113,10 +115,10 @@ function buildWindowsEnvironment (): Record<string, string> {
     mergeRegistryEnv(merged, readRegistryEnv(wnr.HK.CU, 'Environment'))
     mergeRegistryEnv(merged, readRegistryEnv(wnr.HK.CU, 'Volatile Environment'))
 
-    // Preserve process-specific vars (e.g. Electron, Node, Angular)
-    // that aren't defined in the registry
-    for (const [key, value] of Object.entries(process.env)) {
-        if (value !== undefined && findKey(merged, key) === undefined) {
+    // Preserve renderer-accessible vars that aren't defined in the registry
+    const rendererEnv = normalizeEnv((window as any).tabbyAPI.env)
+    for (const [key, value] of Object.entries(rendererEnv)) {
+        if (findKey(merged, key) === undefined) {
             merged[key] = value
         }
     }
@@ -126,10 +128,10 @@ function buildWindowsEnvironment (): Record<string, string> {
 }
 
 export function getEnvironment (refreshFromRegistry = false): Record<string, string> {
-    if (process.platform === 'win32' && refreshFromRegistry) {
+    if ((window as any).tabbyAPI.platform === 'win32' && refreshFromRegistry) {
         cachedEnvironment = buildWindowsEnvironment()
     } else {
-        cachedEnvironment ??= normalizeEnv(process.env)
+        cachedEnvironment ??= normalizeEnv((window as any).tabbyAPI.env)
     }
     return cachedEnvironment
 }
@@ -138,7 +140,7 @@ export function getEnvironment (refreshFromRegistry = false): Record<string, str
 export function substituteEnv (env: Record<string, string>): Record<string, string> {
     const base = getEnvironment()
     env = { ...env }
-    const pattern = process.platform === 'win32' ? /%(\w+)%/g : /\$(\w+)\b/g
+    const pattern = (window as any).tabbyAPI.platform === 'win32' ? /%(\w+)%/g : /\$(\w+)\b/g
     for (const [key, value] of Object.entries(env)) {
         env[key] = value.toString().replace(pattern, (substring, p1) => {
             const found = findKey(base, p1)

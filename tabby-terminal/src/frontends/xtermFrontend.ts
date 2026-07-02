@@ -5,6 +5,9 @@ import { ConfigService, getCSSFontFamily, getWindows10Build, HostAppService, Hot
 import { Frontend, SearchOptions, SearchState } from './frontend'
 import { Terminal, ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+// @xterm/addon-ligatures is externalized from the renderer bundle because its
+// dependency (font-finder) uses Node.js Buffer at module scope. In the sandboxed
+// renderer the external resolves to an empty stub, so LigaturesAddon is undefined.
 import { LigaturesAddon } from '@xterm/addon-ligatures'
 import { ISearchOptions, SearchAddon } from '@xterm/addon-search'
 import { WebglAddon } from '@xterm/addon-webgl'
@@ -80,7 +83,7 @@ export class XTermFrontend extends Frontend {
     private searchState: SearchState = { resultCount: 0 }
     private fitAddon = new FitAddon()
     private serializeAddon = new SerializeAddon()
-    private ligaturesAddon?: LigaturesAddon
+    private ligaturesAddon?: { dispose?: () => void }
     private webGLAddon?: WebglAddon
     private canvasAddon?: CanvasAddon
     private opened = false
@@ -108,7 +111,7 @@ export class XTermFrontend extends Frontend {
             allowTransparency: true,
             allowProposedApi: true,
             overviewRulerWidth: 8,
-            windowsPty: process.platform === 'win32' ? {
+            windowsPty: this.hostApp.platform === Platform.Windows ? {
                 backend: this.configService.store.terminal.useConPTY ? 'conpty' : 'winpty',
                 buildNumber: getWindows10Build(),
             } : undefined,
@@ -117,10 +120,10 @@ export class XTermFrontend extends Frontend {
         this.xtermCore = this.xterm['_core']
 
         this.xterm.onBinary(data => {
-            this.input.next(Buffer.from(data, 'binary'))
+            this.input.next(Uint8Array.from(data, c => c.charCodeAt(0)))
         })
         this.xterm.onData(data => {
-            this.input.next(Buffer.from(data, 'utf-8'))
+            this.input.next(new TextEncoder().encode(data))
         })
         this.xterm.onResize(({ cols, rows }) => {
             this.resize.next({ rows, columns: cols })
@@ -163,13 +166,13 @@ export class XTermFrontend extends Frontend {
 
             // Ctrl-/
             if (event.type === 'keydown' && event.key === '/' && event.ctrlKey) {
-                this.input.next(Buffer.from('\u001f', 'binary'))
+                this.input.next(new Uint8Array([0x1f]))
                 return false
             }
 
             // Ctrl-@
             if (event.type === 'keydown' && event.key === '@' && event.ctrlKey) {
-                this.input.next(Buffer.from('\u0000', 'binary'))
+                this.input.next(new Uint8Array([0x00]))
                 return false
             }
 
@@ -547,7 +550,7 @@ export class XTermFrontend extends Frontend {
     configure (profile: BaseTerminalProfile): void {
         const config = this.configService.store
 
-        setImmediate(() => {
+        setTimeout(() => {
             if (this.xterm.cols && this.xterm.rows && this.xtermCore.charMeasure) {
                 if (this.xtermCore.charMeasure) {
                     this.xtermCore.charMeasure.measure(this.xtermCore.options)
@@ -557,7 +560,7 @@ export class XTermFrontend extends Frontend {
                 }
                 this.resizeHandler()
             }
-        })
+        }, 0)
 
         this.xtermCore.browser.isWindows = this.hostApp.platform === Platform.Windows
         this.xtermCore.browser.isLinux = this.hostApp.platform === Platform.Linux
@@ -583,9 +586,9 @@ export class XTermFrontend extends Frontend {
 
         this.configureColors(profile.terminalColorScheme)
 
-        if (this.opened && config.terminal.ligatures && !this.ligaturesAddon && this.hostApp.platform !== Platform.Web) {
+        if (this.opened && config.terminal.ligatures && LigaturesAddon && !this.ligaturesAddon && this.hostApp.platform !== Platform.Web) {
             this.ligaturesAddon = new LigaturesAddon()
-            this.xterm.loadAddon(this.ligaturesAddon)
+            this.xterm.loadAddon(this.ligaturesAddon as any)
         }
     }
 

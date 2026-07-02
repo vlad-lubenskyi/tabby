@@ -1,4 +1,4 @@
-import * as path from 'path'
+declare const require: (module: string) => any
 import { Injectable } from '@angular/core'
 import { HostAppService, Platform } from 'tabby-core'
 
@@ -33,7 +33,7 @@ export class Cygwin32ShellProvider extends ShellProvider {
         return [{
             id: 'cygwin32',
             name: 'Cygwin (32 bit)',
-            command: path.join(cygwinPath, 'bin', 'bash.exe'),
+            command: cygwinPath + '\\bin\\bash.exe',
             args: ['--login', '-i'],
             icon: require('../icons/cygwin.svg'),
             env: {

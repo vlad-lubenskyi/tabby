@@ -1,3 +1,4 @@
+declare const require: (module: string) => any
 import { ConfigProvider } from './api/configProvider'
 import { Platform } from './api/hostApp'
 

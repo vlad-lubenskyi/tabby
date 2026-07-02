@@ -1,8 +1,9 @@
 import deepEqual from 'deep-equal'
 import { Subject, distinctUntilChanged, map } from 'rxjs'
-import { ipcRenderer } from 'electron'
 import { Injectable, NgZone } from '@angular/core'
 import { AppService, HostAppService, Platform } from 'tabby-core'
+
+const ipc = () => (window as any).tabbyAPI?.ipc
 
 /** @hidden */
 @Injectable({ providedIn: 'root' })
@@ -28,12 +29,12 @@ export class TouchbarService {
             ).subscribe(() => this.update())
         })
 
-        ipcRenderer.on('touchbar-selection', (_event, index) => this.zone.run(() => {
+        ipc()?.on('touchbar-selection', (index: number) => this.zone.run(() => {
             this.app.selectTab(this.app.tabs[index])
         }))
 
         this.touchbarState$.pipe(distinctUntilChanged(deepEqual)).subscribe(state => {
-            ipcRenderer.send('window-set-touch-bar', ...state)
+            ipc()?.send('window-set-touch-bar', ...state)
         })
     }
 

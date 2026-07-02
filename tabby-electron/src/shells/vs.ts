@@ -1,9 +1,10 @@
-import * as path from 'path'
-import * as fs from 'fs/promises'
+declare const require: (module: string) => any
 import { Injectable } from '@angular/core'
 import { HostAppService, Platform } from 'tabby-core'
 
 import { ShellProvider, Shell } from 'tabby-local'
+
+const ipc = () => (window as any).tabbyAPI?.ipc
 
 /* eslint-disable quote-props */
 const vsIconMap: Record<string, string> = {
@@ -27,17 +28,21 @@ export class VSDevToolsProvider extends ShellProvider {
             return []
         }
 
-        const x86ParentPath = path.join(process.env['programfiles(x86)'] ?? 'C:\\Program Files (x86)', 'Microsoft Visual Studio')
-        const x64ParentPath = path.join(process.env['programfiles'] ?? 'C:\\Program Files', 'Microsoft Visual Studio')
+        const programFilesX86: string = (window as any).tabbyAPI.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)'
+        const programFiles: string = (window as any).tabbyAPI.env.ProgramFiles ?? 'C:\\Program Files'
+        const x86ParentPath = programFilesX86 + '\\Microsoft Visual Studio'
+        const x64ParentPath = programFiles + '\\Microsoft Visual Studio'
 
         const result: Shell[] = []
         for (const parentPath of [x86ParentPath, x64ParentPath]) {
             try {
-                await fs.stat(parentPath)
-                for (const version of await fs.readdir(parentPath)) {
-                    const bat = path.join(parentPath, version, 'Community\\Common7\\Tools\\VsDevCmd.bat')
+                await ipc().invoke('bridge:fs:stat', parentPath)
+                const entries: Array<{ name: string; isDirectory: boolean }> = await ipc().invoke('bridge:fs:readdir', parentPath)
+                for (const entry of entries) {
+                    const version = entry.name
+                    const bat = parentPath + '\\' + version + '\\Community\\Common7\\Tools\\VsDevCmd.bat'
                     try {
-                        await fs.stat(bat)
+                        await ipc().invoke('bridge:fs:stat', bat)
                     } catch {
                         continue
                     }
@@ -56,24 +61,5 @@ export class VSDevToolsProvider extends ShellProvider {
             }
         }
         return result
-
-        // return [
-        //     {
-        //         id: 'cmderps',
-        //         name: 'Cmder PowerShell',
-        //         command: 'powershell.exe',
-        //         args: [
-        //             '-ExecutionPolicy',
-        //             'Bypass',
-        //             '-nologo',
-        //             '-noprofile',
-        //             '-noexit',
-        //             '-command',
-        //             `Invoke-Expression '. ''${path.join(process.env.CMDER_ROOT, 'vendor', 'profile.ps1')}'''`,
-        //         ],
-        //         icon: require('../icons/cmder-powershell.svg'),
-        //         env: {},
-        //     },
-        // ]
     }
 }

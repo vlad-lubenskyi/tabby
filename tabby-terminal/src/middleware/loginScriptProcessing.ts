@@ -41,8 +41,8 @@ export class LoginScriptProcessor extends SessionMiddleware {
         }
     }
 
-    feedFromSession (data: Buffer): void {
-        const dataString = data.toString()
+    feedFromSession (data: Uint8Array): void {
+        const dataString = new TextDecoder().decode(data)
 
         for (const script of this.remainingScripts) {
             if (!script.expect) {
@@ -58,7 +58,7 @@ export class LoginScriptProcessor extends SessionMiddleware {
 
             if (match) {
                 this.logger.info('Executing script:', script)
-                this.outputToSession.next(Buffer.from(script.send + '\n'))
+                this.outputToSession.next(new TextEncoder().encode(script.send + '\n'))
                 this.remainingScripts = this.remainingScripts.filter(x => x !== script)
             } else {
                 if (script.optional) {
@@ -77,7 +77,7 @@ export class LoginScriptProcessor extends SessionMiddleware {
         for (const script of this.remainingScripts) {
             if (!script.expect) {
                 this.logger.info('Executing script:', script.send)
-                this.outputToSession.next(Buffer.from(script.send + '\n'))
+                this.outputToSession.next(new TextEncoder().encode(script.send + '\n'))
                 this.remainingScripts = this.remainingScripts.filter(x => x !== script)
             } else {
                 break

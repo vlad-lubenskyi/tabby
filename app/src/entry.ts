@@ -11,21 +11,19 @@ import { findPlugins, initModuleLookup, loadPlugins } from './plugins'
 import { enableProdMode, NgModuleRef, ApplicationRef } from '@angular/core'
 import { enableDebugTools } from '@angular/platform-browser'
 import { platformBrowserDynamic } from '@angular/platform-browser-dynamic'
-import { ipcRenderer } from 'electron'
-
 import { getRootModule } from './app.module'
 import { BootstrapData, BOOTSTRAP_DATA, PluginInfo } from '../../tabby-core/src/api/mainProcess'
+
+const ipcBridge = (window as any).tabbyAPI?.ipc
 
 // Always land on the start view
 location.hash = ''
 
-;(process as any).enablePromiseAPI = true
+// process.* is not available in the sandboxed renderer. All runtime values come from
+// window.tabbyAPI, populated by the preload script via contextBridge.
+const tabbyAPI = (window as any).tabbyAPI
 
-if (process.platform === 'win32' && !('HOME' in process.env)) {
-    process.env.HOME = `${process.env.HOMEDRIVE}${process.env.HOMEPATH}`
-}
-
-if (process.env.TABBY_DEV && !process.env.TABBY_FORCE_ANGULAR_PROD) {
+if (tabbyAPI?.devMode && !tabbyAPI?.forceAngularProd) {
     console.warn('Running in debug mode')
 } else {
     enableProdMode()
@@ -46,7 +44,7 @@ async function bootstrap (bootstrapData: BootstrapData, plugins: PluginInfo[], s
     const moduleRef = await platformBrowserDynamic([
         { provide: BOOTSTRAP_DATA, useValue: bootstrapData },
     ]).bootstrapModule(module)
-    if (process.env.TABBY_DEV) {
+    if (tabbyAPI?.devMode) {
         const applicationRef = moduleRef.injector.get(ApplicationRef)
         const componentRef = applicationRef.components[0]
         enableDebugTools(componentRef)
@@ -54,7 +52,7 @@ async function bootstrap (bootstrapData: BootstrapData, plugins: PluginInfo[], s
     return moduleRef
 }
 
-ipcRenderer.once('start', async (_$event, bootstrapData: BootstrapData) => {
+ipcBridge?.once('start', async (bootstrapData: BootstrapData) => {
     console.log('Window bootstrap data:', bootstrapData)
 
     initModuleLookup(bootstrapData.userPluginsPath)
@@ -81,4 +79,4 @@ ipcRenderer.once('start', async (_$event, bootstrapData: BootstrapData) => {
     }
 })
 
-ipcRenderer.send('ready')
+ipcBridge?.send('ready')

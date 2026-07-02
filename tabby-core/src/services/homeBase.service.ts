@@ -1,5 +1,5 @@
 import { Injectable, Inject } from '@angular/core'
-import * as mixpanel from 'mixpanel'
+import mixpanel from 'mixpanel-browser'
 import { v4 as uuidv4 } from 'uuid'
 import { ConfigService } from './config.service'
 import { PlatformService, BOOTSTRAP_DATA, BootstrapData, HostAppService } from '../api'
@@ -37,7 +37,7 @@ export class HomeBaseService {
 
     reportBug (): void {
         let body = `Version: ${this.appVersion}\n`
-        body += `Platform: ${this.hostApp.platform} ${process.arch} ${this.platform.getOSRelease()}\n`
+        body += `Platform: ${this.hostApp.platform} ${(window as any).tabbyAPI?.arch ?? 'unknown'} ${this.platform.getOSRelease()}\n`
         const plugins = this.bootstrapData.installedPlugins.filter(x => !x.isBuiltin).map(x => x.name)
         body += `Plugins: ${plugins.join(', ') || 'none'}\n`
         body += `Frontend: ${this.config.store.terminal?.frontend}\n\n`
@@ -48,7 +48,8 @@ export class HomeBaseService {
         if (!window.localStorage.analyticsUserID) {
             window.localStorage.analyticsUserID = uuidv4()
         }
-        this.mixpanel = (mixpanel as any).init('bb4638b0860eef14c04d4fbc5eb365fa')
+        mixpanel.init('bb4638b0860eef14c04d4fbc5eb365fa')
+        this.mixpanel = mixpanel
         if (!window.localStorage.installEventSent) {
             this.mixpanel.track('freshInstall', this.getAnalyticsProperties())
             window.localStorage.installEventSent = true
@@ -59,7 +60,7 @@ export class HomeBaseService {
     getAnalyticsProperties (): Record<string, string> {
         return {
             distinct_id: window.localStorage.analyticsUserID,
-            platform: process.platform,
+            platform: this.hostApp.platform,
             os: this.platform.getOSRelease(),
             version: this.appVersion,
         }
