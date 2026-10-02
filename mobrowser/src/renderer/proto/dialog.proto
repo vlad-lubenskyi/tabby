@@ -1,0 +1,36 @@
+syntax = "proto3";
+import "google/protobuf/empty.proto";
+
+message FileFilter { string name = 1; repeated string extensions = 2; }
+message OpenDialogRequest {
+  string title = 1;
+  repeated string properties = 2;
+  repeated FileFilter filters = 3;
+  string default_path = 4;
+}
+message OpenDialogResult { repeated string file_paths = 1; bool canceled = 2; }
+
+message SaveDialogRequest {
+  string title = 1;
+  repeated FileFilter filters = 2;
+  string default_path = 3;
+}
+message SaveDialogResult { string file_path = 1; bool canceled = 2; }
+
+message MessageBoxButton { string label = 1; bool is_default = 2; bool is_cancel = 3; }
+message MessageBoxRequest {
+  string type = 1;
+  string title = 2;
+  string message = 3;
+  string detail = 4;
+  repeated MessageBoxButton buttons = 5;
+  bool has_checkbox = 6;
+  string checkbox_label = 7;
+}
+message MessageBoxResult { int32 response = 1; bool checkbox_checked = 2; }
+
+service DialogService {
+  rpc ShowOpenDialog(OpenDialogRequest) returns (OpenDialogResult);
+  rpc ShowSaveDialog(SaveDialogRequest) returns (SaveDialogResult);
+  rpc ShowMessageBox(MessageBoxRequest) returns (MessageBoxResult);
+}

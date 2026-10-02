@@ -3,13 +3,12 @@ import stripAnsi from 'strip-ansi'
 import { Injector } from '@angular/core'
 import { LogService } from 'tabby-core'
 import { BaseSession, UTF8SplitterMiddleware, InputProcessor } from 'tabby-terminal'
-import { SSHSession } from './ssh'
+import { SSHSession, ShellChannelProxy } from './ssh'
 import { SSHProfile } from '../api'
-import * as russh from 'russh'
 
 
 export class SSHShellSession extends BaseSession {
-    shell?: russh.Channel
+    shell?: ShellChannelProxy
     get serviceMessage$ (): Observable<string> { return this.serviceMessage }
     private serviceMessage = new Subject<string>()
     private ssh: SSHSession|null
@@ -54,7 +53,7 @@ export class SSHShellSession extends BaseSession {
         this.loginScriptProcessor?.executeUnconditionalScripts()
 
         this.shell.data$.subscribe(data => {
-            this.emitOutput(Buffer.from(data))
+            this.emitOutput(data)
         })
 
         this.shell.eof$.subscribe(() => {
@@ -93,6 +92,8 @@ export class SSHShellSession extends BaseSession {
         this.logger.debug('Closing shell')
         this.serviceMessage.complete()
         this.kill()
+        this.shell?.close()
+        this.shell = undefined
         this.ssh?.unref()
         this.ssh = null
         await super.destroy()

@@ -1,0 +1,325 @@
+/* eslint-disable @typescript-eslint/no-unsafe-enum-comparison */
+import colors from 'ansi-colors'
+import stripAnsi from 'strip-ansi'
+import { Injector } from '@angular/core'
+import { LogService } from 'tabby-core'
+import { BaseSession, InputProcessor, SessionMiddleware, TerminalStreamProcessor } from 'tabby-terminal'
+import type { ConnectableTerminalProfile, InputProcessingOptions, LoginScriptsOptions, StreamProcessingOptions } from 'tabby-terminal'
+import { Subject, Observable } from 'rxjs'
+import { ipc } from '@gen/ipc'
+
+
+export interface TelnetProfile extends ConnectableTerminalProfile {
+    options: TelnetProfileOptions
+}
+
+export interface TelnetProfileOptions extends StreamProcessingOptions, LoginScriptsOptions {
+    host: string
+    port: number | null
+    input: InputProcessingOptions,
+}
+
+enum TelnetCommands {
+    SUBOPTION_SEND = 1,
+    SUBOPTION_END = 240,
+    GA = 249,
+    SUBOPTION = 250,
+    WILL = 251,
+    WONT = 252,
+    DO = 253,
+    DONT = 254,
+    IAC = 255,
+}
+
+enum TelnetOptions {
+    ECHO = 0x1,
+    AUTH_OPTIONS = 0x25,
+    SUPPRESS_GO_AHEAD = 0x03,
+    TERMINAL_TYPE = 0x18,
+    NEGO_WINDOW_SIZE = 0x1f,
+    NEGO_TERMINAL_SPEED = 0x20,
+    STATUS = 0x05,
+    REMOTE_FLOW_CONTROL = 0x21,
+    X_DISPLAY_LOCATION = 0x23,
+    NEW_ENVIRON = 0x27,
+}
+
+class UnescapeFFMiddleware extends SessionMiddleware {
+    feedFromSession (data: Uint8Array): void {
+        while (data.includes(0xff)) {
+            const pos = data.indexOf(0xff)
+
+            this.outputToTerminal.next(data.slice(0, pos))
+            this.outputToTerminal.next(new Uint8Array([0xff, 0xff]))
+
+            data = data.slice(pos + 1)
+        }
+
+        this.outputToTerminal.next(data)
+    }
+}
+
+export class TelnetSession extends BaseSession {
+    get serviceMessage$ (): Observable<string> { return this.serviceMessage }
+
+    private sessionId = window.crypto.randomUUID()
+    private serviceMessage = new Subject<string>()
+    private connection: { unsubscribe(): void } | null = null
+    private destroying: Promise<void> | null = null
+    private streamProcessor: TerminalStreamProcessor
+    private telnetProtocol = false
+    private lastWidth = 0
+    private lastHeight = 0
+    private requestedOptions = new Set<number>()
+    private telnetRemoteEcho = false
+
+    constructor (
+        injector: Injector,
+        public profile: TelnetProfile,
+    ) {
+        super(injector.get(LogService).create(`telnet-${profile.options.host}-${profile.options.port}`))
+        this.streamProcessor = new TerminalStreamProcessor(profile.options)
+        this.middleware.push(this.streamProcessor)
+        this.middleware.push(new InputProcessor(profile.options.input))
+        this.setLoginScriptsOptions(profile.options)
+    }
+
+    async start (): Promise<void> {
+        this.emitServiceMessage(`Connecting to ${this.profile.options.host}`)
+
+        return new Promise((resolve, reject) => {
+            this.connection = ipc.telnet.Connect({
+                sessionId: this.sessionId,
+                host: this.profile.options.host,
+                port: this.profile.options.port ?? 23,
+            }).subscribe({
+                next: event => {
+                    if (event.error) {
+                        this.emitServiceMessage(colors.bgRed.black(' X ') + ` Socket error: ${event.error}`)
+                        reject(new Error(event.error))
+                        void this.destroy()
+                    } else if (event.closed) {
+                        this.emitServiceMessage('Connection closed')
+                        if (!this.open) reject(new Error('Connection closed before connecting'))
+                        void this.destroy()
+                    } else if (event.connected) {
+                        this.emitServiceMessage('Connected')
+                        this.open = true
+                        setTimeout(() => this.streamProcessor.start())
+                        this.loginScriptProcessor?.executeUnconditionalScripts()
+                        resolve()
+                    } else if (event.data.length) {
+                        this.onData(event.data)
+                    }
+                },
+                error: error => {
+                    reject(error)
+                    void this.destroy()
+                },
+                complete: () => {
+                    if (!this.open) reject(new Error('Connection closed before connecting'))
+                    void this.destroy()
+                },
+            })
+        })
+    }
+
+    requestOption (cmd: TelnetCommands, option: TelnetOptions): void {
+        this.requestedOptions.add(option)
+        this.emitTelnet(cmd, option)
+    }
+
+    emitServiceMessage (msg: string): void {
+        this.serviceMessage.next(msg)
+        this.logger.info(stripAnsi(msg))
+    }
+
+    onData (data: Uint8Array): void {
+        if (!this.telnetProtocol && data[0] === TelnetCommands.IAC) {
+            this.telnetProtocol = true
+            this.middleware.push(new UnescapeFFMiddleware())
+            this.requestOption(TelnetCommands.DO, TelnetOptions.SUPPRESS_GO_AHEAD)
+            this.emitTelnet(TelnetCommands.WILL, TelnetOptions.TERMINAL_TYPE)
+            this.emitTelnet(TelnetCommands.WILL, TelnetOptions.NEGO_WINDOW_SIZE)
+        }
+        if (this.telnetProtocol) {
+            data = this.processTelnetProtocol(data)
+        }
+        this.emitOutput(data)
+    }
+
+    emitTelnet (command: TelnetCommands, option: TelnetOptions): void {
+        this.logger.debug('>', TelnetCommands[command], TelnetOptions[option] || option)
+        this.write(new Uint8Array([TelnetCommands.IAC, command, option]))
+    }
+
+    emitTelnetSuboption (option: TelnetOptions, value: Uint8Array): void {
+        this.logger.debug('>', 'SUBOPTION', TelnetOptions[option], value)
+        this.write(new Uint8Array([
+            TelnetCommands.IAC,
+            TelnetCommands.SUBOPTION,
+            option,
+            ...value,
+            TelnetCommands.IAC,
+            TelnetCommands.SUBOPTION_END,
+        ]))
+    }
+
+    processTelnetProtocol (data: Uint8Array): Uint8Array {
+        while (data.length) {
+            if (data[0] === TelnetCommands.IAC) {
+                const command = data[1]
+                const commandName = TelnetCommands[command]
+                const option = data[2]
+                const optionName = TelnetOptions[option]
+
+                if (command === TelnetCommands.IAC) {
+                    data = data.slice(1)
+                    break
+                }
+
+                data = data.slice(3)
+                this.logger.debug('<', commandName || command, optionName || option)
+
+                if (command === TelnetCommands.WILL || command === TelnetCommands.WONT || command === TelnetCommands.DONT) {
+                    if (this.requestedOptions.has(option)) {
+                        this.requestedOptions.delete(option)
+                        continue
+                    }
+                }
+
+                if (command === TelnetCommands.WILL) {
+                    if ([
+                        TelnetOptions.SUPPRESS_GO_AHEAD,
+                        TelnetOptions.ECHO,
+                    ].includes(option)) {
+                        this.emitTelnet(TelnetCommands.DO, option)
+                        if (option === TelnetOptions.ECHO && this.streamProcessor.forceEcho) {
+                            this.telnetRemoteEcho = true
+                            this.streamProcessor.forceEcho = false
+                            this.requestOption(TelnetCommands.WONT, option)
+                        }
+                    } else {
+                        this.logger.debug('(!) Unhandled option')
+                        this.emitTelnet(TelnetCommands.DONT, option)
+                    }
+                }
+                if (command === TelnetCommands.DO) {
+                    if (option === TelnetOptions.NEGO_WINDOW_SIZE) {
+                        this.emitTelnet(TelnetCommands.WILL, option)
+                        this.emitSize()
+                    } else if (option === TelnetOptions.ECHO) {
+                        if (this.telnetRemoteEcho) {
+                            this.streamProcessor.forceEcho = false
+                            this.emitTelnet(TelnetCommands.WONT, option)
+                        } else {
+                            this.streamProcessor.forceEcho = true
+                            this.emitTelnet(TelnetCommands.WILL, option)
+                        }
+                    } else if (option === TelnetOptions.TERMINAL_TYPE) {
+                        this.emitTelnet(TelnetCommands.WILL, option)
+                    } else {
+                        this.logger.debug('(!) Unhandled option')
+                        this.emitTelnet(TelnetCommands.WONT, option)
+                    }
+                }
+                if (command === TelnetCommands.DONT) {
+                    if (option === TelnetOptions.ECHO) {
+                        this.streamProcessor.forceEcho = false
+                        this.emitTelnet(TelnetCommands.WONT, option)
+                    } else {
+                        this.logger.debug('(!) Unhandled option')
+                        this.emitTelnet(TelnetCommands.WONT, option)
+                    }
+                }
+                if (command === TelnetCommands.WONT) {
+                    if (option === TelnetOptions.ECHO) {
+                        this.telnetRemoteEcho = false
+                        this.emitTelnet(TelnetCommands.DONT, option)
+                    } else {
+                        this.logger.debug('(!) Unhandled option')
+                        this.emitTelnet(TelnetCommands.DONT, option)
+                    }
+                }
+                if (command === TelnetCommands.SUBOPTION) {
+                    const endIndex = data.indexOf(TelnetCommands.IAC)
+                    const optionValue = data.slice(0, endIndex)
+                    this.logger.debug('<', commandName || command, optionName || option, optionValue)
+
+                    if (option === TelnetOptions.TERMINAL_TYPE && optionValue[0] === TelnetCommands.SUBOPTION_SEND) {
+                        this.emitTelnetSuboption(option, new Uint8Array([0, ...new TextEncoder().encode('XTERM-256COLOR')]))
+                    }
+
+                    data = data.slice(endIndex + 2)
+                }
+            } else {
+                return data
+            }
+        }
+        return data
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-empty-function
+    resize (w: number, h: number): void {
+        if (w && h) {
+            this.lastWidth = w
+            this.lastHeight = h
+        }
+        if (this.lastWidth && this.lastHeight && this.telnetProtocol) {
+            this.emitSize()
+        }
+    }
+
+    private emitSize () {
+        if (this.lastWidth && this.lastHeight) {
+            this.emitTelnetSuboption(TelnetOptions.NEGO_WINDOW_SIZE, new Uint8Array([
+                this.lastWidth >> 8, this.lastWidth & 0xff,
+                this.lastHeight >> 8, this.lastHeight & 0xff,
+            ]))
+        } else {
+            this.emitTelnet(TelnetCommands.WONT, TelnetOptions.NEGO_WINDOW_SIZE)
+        }
+    }
+
+    write (data: Uint8Array): void {
+        void ipc.telnet.Write({ sessionId: this.sessionId, data }).catch(error => {
+            this.emitServiceMessage(colors.bgRed.black(' X ') + ` Socket error: ${error}`)
+        })
+    }
+
+    kill (_signal?: string): void {
+        this.connection?.unsubscribe()
+        this.connection = null
+        void ipc.telnet.Destroy({ sessionId: this.sessionId })
+    }
+
+    async destroy (): Promise<void> {
+        if (!this.destroying) {
+            this.destroying = (async () => {
+                this.connection?.unsubscribe()
+                this.connection = null
+                await ipc.telnet.Destroy({ sessionId: this.sessionId }).catch(() => {})
+                this.streamProcessor.close()
+                this.serviceMessage.complete()
+                await super.destroy()
+            })()
+        }
+        await this.destroying
+    }
+
+    async getChildProcesses (): Promise<any[]> {
+        return []
+    }
+
+    async gracefullyKillProcess (): Promise<void> {
+        this.kill()
+    }
+
+    supportsWorkingDirectory (): boolean {
+        return false
+    }
+
+    async getWorkingDirectory (): Promise<string|null> {
+        return null
+    }
+}

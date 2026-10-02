@@ -1,0 +1,12 @@
+syntax = "proto3";
+import "google/protobuf/empty.proto";
+import "google/protobuf/wrappers.proto";
+
+message ShellIntegrationRequest { string shell = 1; }
+
+service ShellService {
+  rpc GetExePath(ShellIntegrationRequest) returns (google.protobuf.StringValue);
+  rpc IsInstalled(ShellIntegrationRequest) returns (google.protobuf.BoolValue);
+  rpc Install(ShellIntegrationRequest) returns (google.protobuf.Empty);
+  rpc Remove(ShellIntegrationRequest) returns (google.protobuf.Empty);
+}

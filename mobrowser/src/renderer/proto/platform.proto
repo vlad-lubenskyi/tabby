@@ -1,0 +1,36 @@
+syntax = "proto3";
+import "google/protobuf/empty.proto";
+import "google/protobuf/wrappers.proto";
+
+message FontInfo { string family = 1; string style = 2; }
+message ListFontsResult { repeated FontInfo fonts = 1; }
+
+message IsProcessRunningRequest { int32 pid = 1; }
+
+message ExecProcessRequest { string file = 1; repeated string args = 2; string cwd = 3; map<string, string> env = 4; }
+message ExecProcessResult { int32 exit_code = 1; string stdout = 2; string stderr = 3; }
+
+message ColorScheme { string name = 1; bytes data = 2; }
+message GetColorSchemesResult { repeated ColorScheme schemes = 1; }
+
+message OpenExternalRequest { string url = 1; }
+
+message ClipboardWriteRequest { string text = 1; string html = 2; }
+
+message PathRequest { string path = 1; }
+message PathJoinRequest { repeated string parts = 1; }
+message PathResolveRequest { string path = 1; string cwd = 2; }
+
+service PlatformService {
+  rpc ListFonts(google.protobuf.Empty) returns (ListFontsResult);
+  rpc IsProcessRunning(IsProcessRunningRequest) returns (google.protobuf.BoolValue);
+  rpc ExecProcess(ExecProcessRequest) returns (ExecProcessResult);
+  rpc GetColorSchemes(google.protobuf.Empty) returns (GetColorSchemesResult);
+  rpc OpenExternal(OpenExternalRequest) returns (google.protobuf.Empty);
+  rpc ClipboardReadText(google.protobuf.Empty) returns (google.protobuf.StringValue);
+  rpc ClipboardWrite(ClipboardWriteRequest) returns (google.protobuf.Empty);
+  rpc PathBasename(PathRequest) returns (google.protobuf.StringValue);
+  rpc PathDirname(PathRequest) returns (google.protobuf.StringValue);
+  rpc PathJoin(PathJoinRequest) returns (google.protobuf.StringValue);
+  rpc PathResolve(PathResolveRequest) returns (google.protobuf.StringValue);
+}

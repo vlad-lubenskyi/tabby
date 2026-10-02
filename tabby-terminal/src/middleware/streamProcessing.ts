@@ -1,4 +1,3 @@
-declare const require: (module: string) => any
 import hexdump from 'hexer'
 import bufferReplace from 'buffer-replace'
 import colors from 'ansi-colors'
@@ -6,25 +5,68 @@ import binstring from 'binstring'
 import { interval, debounce } from 'rxjs'
 import { SessionMiddleware } from '../api/middleware'
 
-// Minimal local interfaces for Node.js stream/readline types used at runtime.
-// The actual implementations are provided at runtime via Node.js require (available
-// in the Electron main process context), but TypeScript only needs the shapes.
-interface NodeStream {
-    on(event: string, listener: (...args: any[]) => void): this
-    write(data: any): boolean
-    emit(event: string, ...args: any[]): boolean
+class SimplePassThrough {
+    private _listeners = new Map<string, Array<(...a: any[]) => void>>()
+
+    on (event: string, listener: (...args: any[]) => void): this {
+        if (!this._listeners.has(event)) this._listeners.set(event, [])
+        this._listeners.get(event)!.push(listener)
+        return this
+    }
+
+    write (data: any): boolean {
+        for (const fn of this._listeners.get('data') ?? []) fn(data)
+        return true
+    }
+
+    emit (event: string, ...args: any[]): boolean {
+        const fns = this._listeners.get(event) ?? []
+        for (const fn of fns) fn(...args)
+        return fns.length > 0
+    }
 }
 
-interface ReadLine {
-    on(event: string, listener: (...args: any[]) => void): this
-    prompt(preserveCursor?: boolean): void
-    close(): void
+class SimpleReadline {
+    private _buf = ''
+    private _listeners = new Map<string, Array<(...a: any[]) => void>>()
+    private _enc = new TextEncoder()
+
+    constructor (private _opts: { input: SimplePassThrough; output: SimplePassThrough; terminal?: boolean; prompt?: string }) {
+        _opts.input.on('data', (data: Uint8Array | string) => {
+            const s = typeof data === 'string' ? data : new TextDecoder().decode(data)
+            for (const ch of s) {
+                if (ch === '\r' || ch === '\n') {
+                    const line = this._buf
+                    this._buf = ''
+                    for (const fn of this._listeners.get('line') ?? []) fn(line)
+                } else if (ch === '\x7f' || ch === '\x08') {
+                    if (this._buf.length) {
+                        this._buf = this._buf.slice(0, -1)
+                        _opts.output.write(this._enc.encode('\x08 \x08'))
+                    }
+                } else {
+                    this._buf += ch
+                    _opts.output.write(this._enc.encode(ch))
+                }
+            }
+        })
+    }
+
+    on (event: string, listener: (...args: any[]) => void): this {
+        if (!this._listeners.has(event)) this._listeners.set(event, [])
+        this._listeners.get(event)!.push(listener)
+        return this
+    }
+
+    prompt (_preserveCursor?: boolean): void {
+        this._opts.output.write(this._enc.encode(this._opts.prompt ?? '> '))
+    }
+
+    close (): void { /* nothing to clean up */ }
 }
 
-const { PassThrough } = require('stream') as { PassThrough: new () => NodeStream }
-const { createInterface: createReadline, clearLine } = require('readline') as {
-    createInterface: (options: any) => ReadLine
-    clearLine: (stream: NodeStream, dir: number) => void
+function clearLine (stream: SimplePassThrough, _dir: number): void {
+    stream.write(new TextEncoder().encode('\x1b[2K\r'))
 }
 
 export type InputMode = null | 'local-echo' | 'readline' | 'readline-hex'
@@ -50,16 +92,16 @@ function concatUint8 (...arrays: Uint8Array[]): Uint8Array {
 
 export class TerminalStreamProcessor extends SessionMiddleware {
     forceEcho = false
-    private inputReadline: ReadLine|null = null
+    private inputReadline: SimpleReadline|null = null
     private inputPromptVisible = false
-    private inputReadlineInStream: NodeStream
-    private inputReadlineOutStream: NodeStream
+    private inputReadlineInStream: SimplePassThrough
+    private inputReadlineOutStream: SimplePassThrough
     private started = false
 
     constructor (private options: StreamProcessingOptions) {
         super()
-        this.inputReadlineInStream = new PassThrough()
-        this.inputReadlineOutStream = new PassThrough()
+        this.inputReadlineInStream = new SimplePassThrough()
+        this.inputReadlineOutStream = new SimplePassThrough()
         this.inputReadlineOutStream.on('data', (data: Uint8Array | ArrayBuffer) => {
             this.outputToTerminal.next(data instanceof Uint8Array ? data : new Uint8Array(data as ArrayBuffer))
         })
@@ -71,7 +113,7 @@ export class TerminalStreamProcessor extends SessionMiddleware {
     }
 
     start (): void {
-        this.inputReadline = createReadline({
+        this.inputReadline = new SimpleReadline({
             input: this.inputReadlineInStream,
             output: this.inputReadlineOutStream,
             terminal: true,

@@ -11,6 +11,8 @@ import { Window, WindowOptions } from './window'
 import { pluginManager } from './pluginManager'
 import { PTYManager } from './pty'
 import { initBridge } from './bridge'
+import { initKeytar } from './keytar'
+import { initSSH } from './ssh'
 
 /* eslint-disable block-scoped-var */
 
@@ -31,6 +33,8 @@ export class Application {
     constructor (private configStore: any) {
         remote.initialize()
         initBridge()
+        initKeytar()
+        initSSH(this)
         this.useBuiltinGraphics()
         this.ptyManager.init(this)
 

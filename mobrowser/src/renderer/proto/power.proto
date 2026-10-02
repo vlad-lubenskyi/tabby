@@ -1,0 +1,12 @@
+syntax = "proto3";
+import "google/protobuf/empty.proto";
+import "google/protobuf/wrappers.proto";
+
+message StartBlockerRequest { string type = 1; }
+message StartBlockerResult { int32 id = 1; }
+message StopBlockerRequest { int32 id = 1; }
+
+service PowerService {
+  rpc StartBlocker(StartBlockerRequest) returns (StartBlockerResult);
+  rpc StopBlocker(StopBlockerRequest) returns (google.protobuf.Empty);
+}

@@ -1,0 +1,274 @@
+syntax = "proto3";
+import "google/protobuf/empty.proto";
+import "google/protobuf/wrappers.proto";
+
+// ── Session identity ──────────────────────────────────────────────────────────
+
+message SshSessionId { string session_id = 1; }
+
+// ── Private key supplied by the renderer ──────────────────────────────────────
+
+message SshPrivateKey {
+    string name     = 1;
+    bytes  contents = 2;
+}
+
+// ── Connect request (full profile sent to main) ───────────────────────────────
+
+message SshConnectRequest {
+    string session_id = 1;
+    string host       = 2;
+    uint32 port       = 3;
+    string user       = 4;
+    // "publicKey" | "password" | "agent" | "keyboardInteractive" | ""
+    string auth       = 5;
+    string password   = 6;
+    repeated SshPrivateKey private_keys          = 7;
+    uint32 keepalive_interval_ms                 = 8;
+    uint32 keepalive_count_max                   = 9;
+    uint32 ready_timeout_ms                      = 10;
+    bool   x11                                   = 11;
+    bool   agent_forward                         = 12;
+    bool   skip_banner                           = 13;
+    string proxy_command                         = 14;
+    string socks_proxy_host                      = 15;
+    uint32 socks_proxy_port                      = 16;
+    string http_proxy_host                       = 17;
+    uint32 http_proxy_port                       = 18;
+    string agent_type                            = 19;
+    string agent_path                            = 20;
+    string x11_display                           = 21;
+    string jump_channel_id                       = 22;
+    repeated string kex_algorithms               = 30;
+    repeated string cipher_algorithms            = 31;
+    repeated string hmac_algorithms              = 32;
+    repeated string host_key_algorithms          = 33;
+    repeated string compression_algorithms       = 34;
+}
+
+// ── Session event stream (main → renderer) ────────────────────────────────────
+
+message SshHostKeyChallenge {
+    string algo        = 1;
+    string fingerprint = 2;
+    string digest      = 3;
+}
+
+message SshUsernameChallenge { string host = 1; }
+
+message SshPasswordChallenge {
+    string username            = 1;
+    string host                = 2;
+    bool   has_stored_password = 3;
+    string stored_password     = 4;
+}
+
+message SshPassphraseChallenge { string key_hash = 1; }
+
+message SshKiPrompt {
+    string prompt = 1;
+    bool   echo   = 2;
+}
+
+message SshKiChallenge {
+    string              name         = 1;
+    string              instructions = 2;
+    repeated SshKiPrompt prompts     = 3;
+}
+
+message SshConnected { string auth_username = 1; }
+
+message SshDisconnected { string reason = 1; }
+
+// Discriminated via type string field; only the relevant sub-message is set.
+message SshSessionEvent {
+    // "host_key_challenge" | "username_challenge" | "password_challenge" |
+    // "passphrase_challenge" | "ki_challenge" | "service_message" |
+    // "connected" | "disconnected"
+    string               type                = 1;
+    string               service_message_text = 2;
+    SshHostKeyChallenge  host_key_challenge  = 3;
+    SshUsernameChallenge username_challenge  = 4;
+    SshPasswordChallenge password_challenge  = 5;
+    SshPassphraseChallenge passphrase_challenge = 6;
+    SshKiChallenge       ki_challenge        = 7;
+    SshConnected         connected           = 8;
+    SshDisconnected      disconnected        = 9;
+}
+
+// ── Auth responses (renderer → main) ─────────────────────────────────────────
+
+message SshHostKeyResponse {
+    string session_id = 1;
+    bool   accepted   = 2;
+}
+
+message SshUsernameResponse {
+    string session_id = 1;
+    string username   = 2;
+}
+
+message SshPasswordResponse {
+    string session_id = 1;
+    string password   = 2;
+    bool   remember   = 3;
+}
+
+message SshPassphraseResponse {
+    string session_id  = 1;
+    string passphrase  = 2;
+    bool   remember    = 3;
+}
+
+message SshKiResponse {
+    string           session_id = 1;
+    repeated string  responses  = 2;
+}
+
+// ── Shell ─────────────────────────────────────────────────────────────────────
+
+message SshOpenShellRequest {
+    string session_id = 1;
+    bool   x11        = 2;
+}
+
+message SshShellWriteRequest {
+    string session_id = 1;
+    bytes  data       = 2;
+}
+
+message SshShellResizeRequest {
+    string session_id = 1;
+    uint32 cols       = 2;
+    uint32 rows       = 3;
+}
+
+message SshShellEvent {
+    bytes data   = 1;
+    bool  closed = 2;
+}
+
+// ── SFTP ──────────────────────────────────────────────────────────────────────
+
+message SshSftpPathRequest {
+    string session_id = 1;
+    string path       = 2;
+}
+
+message SshSftpOpenRequest {
+    string session_id = 1;
+    string path       = 2;
+    uint32 flags      = 3;
+}
+
+message SshSftpHandleRequest {
+    string session_id = 1;
+    string handle_id  = 2;
+}
+
+message SshSftpReadRequest {
+    string session_id = 1;
+    string handle_id  = 2;
+    uint32 length     = 3;
+}
+
+message SshSftpWriteRequest {
+    string session_id = 1;
+    string handle_id  = 2;
+    bytes  data       = 3;
+}
+
+message SshSftpRenameRequest {
+    string session_id = 1;
+    string old_path   = 2;
+    string new_path   = 3;
+}
+
+message SshSftpChmodRequest {
+    string session_id = 1;
+    string path       = 2;
+    uint32 mode       = 3;
+}
+
+message SshSftpEntry {
+    string name        = 1;
+    uint32 file_type   = 2;
+    uint32 permissions = 3;
+    uint64 size        = 4;
+    int64  mtime       = 5;
+}
+
+message SshSftpReaddirResult { repeated SshSftpEntry entries = 1; }
+
+message SshSftpStatResult {
+    uint32 file_type   = 1;
+    uint32 permissions = 2;
+    uint64 size        = 3;
+    int64  mtime       = 4;
+}
+
+message SshSftpOpenResult  { string handle_id = 1; }
+message SshSftpReadResult  { bytes  data      = 1; }
+
+// ── Port forwarding ───────────────────────────────────────────────────────────
+
+message SshPortForwardRequest {
+    string session_id    = 1;
+    // "Local" | "Remote" | "Dynamic"
+    string type          = 2;
+    string host          = 3;
+    uint32 port          = 4;
+    string target_address = 5;
+    uint32 target_port   = 6;
+}
+
+// ── Jump channel ──────────────────────────────────────────────────────────────
+
+message SshJumpChannelRequest {
+    string session_id  = 1;
+    string target_host = 2;
+    uint32 target_port = 3;
+}
+
+// ── Service definition ────────────────────────────────────────────────────────
+
+service SshService {
+    // Connect; streams session events (auth challenges, service msgs, disconnect)
+    rpc Connect(SshConnectRequest) returns (stream SshSessionEvent);
+
+    // Auth responses
+    rpc RespondHostKey(SshHostKeyResponse)     returns (google.protobuf.Empty);
+    rpc RespondUsername(SshUsernameResponse)   returns (google.protobuf.Empty);
+    rpc RespondPassword(SshPasswordResponse)   returns (google.protobuf.Empty);
+    rpc RespondPassphrase(SshPassphraseResponse) returns (google.protobuf.Empty);
+    rpc RespondKi(SshKiResponse)               returns (google.protobuf.Empty);
+
+    // Session lifecycle
+    rpc Destroy(SshSessionId) returns (google.protobuf.Empty);
+
+    // Shell
+    rpc OpenShell(SshOpenShellRequest)       returns (stream SshShellEvent);
+    rpc WriteShell(SshShellWriteRequest)     returns (google.protobuf.Empty);
+    rpc ResizeShell(SshShellResizeRequest)   returns (google.protobuf.Empty);
+
+    // SFTP
+    rpc SftpReaddir(SshSftpPathRequest)      returns (SshSftpReaddirResult);
+    rpc SftpStat(SshSftpPathRequest)         returns (SshSftpStatResult);
+    rpc SftpReadlink(SshSftpPathRequest)     returns (google.protobuf.StringValue);
+    rpc SftpOpen(SshSftpOpenRequest)         returns (SshSftpOpenResult);
+    rpc SftpRead(SshSftpReadRequest)         returns (SshSftpReadResult);
+    rpc SftpWrite(SshSftpWriteRequest)       returns (google.protobuf.Empty);
+    rpc SftpClose(SshSftpHandleRequest)      returns (google.protobuf.Empty);
+    rpc SftpRmdir(SshSftpPathRequest)        returns (google.protobuf.Empty);
+    rpc SftpMkdir(SshSftpPathRequest)        returns (google.protobuf.Empty);
+    rpc SftpRename(SshSftpRenameRequest)     returns (google.protobuf.Empty);
+    rpc SftpUnlink(SshSftpPathRequest)       returns (google.protobuf.Empty);
+    rpc SftpChmod(SshSftpChmodRequest)       returns (google.protobuf.Empty);
+
+    // Port forwarding
+    rpc AddPortForward(SshPortForwardRequest)    returns (google.protobuf.Empty);
+    rpc RemovePortForward(SshPortForwardRequest) returns (google.protobuf.Empty);
+
+    // Jump channel (open a TCP channel on an already-authenticated session)
+    rpc OpenJumpChannel(SshJumpChannelRequest) returns (google.protobuf.StringValue);
+}

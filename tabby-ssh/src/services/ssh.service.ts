@@ -1,5 +1,3 @@
-import * as fs from 'fs/promises'
-import * as crypto from 'crypto'
 import * as tmp from 'tmp-promise'
 import { Injectable } from '@angular/core'
 import { ConfigService, FileProvidersService, HostAppService, Platform, PlatformService } from 'tabby-core'
@@ -94,8 +92,9 @@ export class SSHService {
             let privateKeyContent: string|null = null
             const buffer = await this.fileProviders.retrieveFile(pk)
             privateKeyContent = new TextDecoder().decode(buffer)
-            await fs.writeFile(tmpFile.path, privateKeyContent)
-            const keyHash = crypto.createHash('sha512').update(privateKeyContent).digest('hex')
+            await (window as any).tabbyAPI.ipc.invoke('bridge:file:write', tmpFile.path, privateKeyContent)
+            const hashBuf = await window.crypto.subtle.digest('SHA-512', new TextEncoder().encode(privateKeyContent))
+            const keyHash = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('')
             // need to pass an default passphrase, otherwise it might get stuck at the passphrase input
             const curPassphrase = await this.passwordStorage.loadPrivateKeyPassword(keyHash) ?? 'tabby'
             const winSCPcom = path.slice(0, -3) + 'com'

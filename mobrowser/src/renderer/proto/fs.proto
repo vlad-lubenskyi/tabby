@@ -1,0 +1,41 @@
+syntax = "proto3";
+import "google/protobuf/empty.proto";
+import "google/protobuf/wrappers.proto";
+
+message ReadFileRequest { string path = 1; }
+message ReadFileResult { bytes data = 1; }
+
+message WriteFileRequest { string path = 1; bytes data = 2; }
+
+message StatRequest { string path = 1; }
+message StatResult { bool is_file = 1; bool is_directory = 2; int64 size = 3; int64 mtime = 4; }
+
+message ExistsRequest { string path = 1; }
+
+message ReadDirRequest { string path = 1; }
+message ReadDirResult { repeated string entries = 1; }
+
+message MkdirRequest { string path = 1; bool recursive = 2; }
+
+message OpenHandleRequest { string path = 1; string flags = 2; int32 mode = 3; }
+message OpenHandleResult { int32 handle_id = 1; }
+
+message ReadChunkRequest { int32 handle_id = 1; int32 length = 2; }
+message ReadChunkResult { bytes data = 1; bool eof = 2; }
+
+message WriteChunkRequest { int32 handle_id = 1; bytes data = 2; int64 offset = 3; }
+
+message CloseHandleRequest { int32 handle_id = 1; }
+
+service FsService {
+  rpc ReadFile(ReadFileRequest) returns (ReadFileResult);
+  rpc WriteFile(WriteFileRequest) returns (google.protobuf.Empty);
+  rpc Stat(StatRequest) returns (StatResult);
+  rpc Exists(ExistsRequest) returns (google.protobuf.BoolValue);
+  rpc ReadDir(ReadDirRequest) returns (ReadDirResult);
+  rpc Mkdir(MkdirRequest) returns (google.protobuf.Empty);
+  rpc OpenHandle(OpenHandleRequest) returns (OpenHandleResult);
+  rpc ReadChunk(ReadChunkRequest) returns (ReadChunkResult);
+  rpc WriteChunk(WriteChunkRequest) returns (google.protobuf.Empty);
+  rpc CloseHandle(CloseHandleRequest) returns (google.protobuf.Empty);
+}

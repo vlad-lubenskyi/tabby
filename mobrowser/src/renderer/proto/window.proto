@@ -1,0 +1,40 @@
+syntax = "proto3";
+import "google/protobuf/empty.proto";
+import "google/protobuf/wrappers.proto";
+
+message WindowBounds { int32 x = 1; int32 y = 2; int32 width = 3; int32 height = 4; }
+message WindowOpacity { double opacity = 1; }
+message WindowTitle { string title = 1; }
+message AlwaysOnTop { bool enabled = 1; }
+message ProgressBar { double value = 1; }
+message TrafficLightPos { int32 x = 1; int32 y = 2; }
+message VibrancyConfig { bool enabled = 1; string type = 2; }
+message DarkModeConfig { string mode = 1; }
+
+service WindowService {
+  rpc Minimize(google.protobuf.Empty) returns (google.protobuf.Empty);
+  rpc ToggleMaximize(google.protobuf.Empty) returns (google.protobuf.Empty);
+  rpc BringToFront(google.protobuf.Empty) returns (google.protobuf.Empty);
+  rpc Close(google.protobuf.Empty) returns (google.protobuf.Empty);
+  rpc SetBounds(WindowBounds) returns (google.protobuf.Empty);
+  rpc SetAlwaysOnTop(AlwaysOnTop) returns (google.protobuf.Empty);
+  rpc SetTitle(WindowTitle) returns (google.protobuf.Empty);
+  rpc SetOpacity(WindowOpacity) returns (google.protobuf.Empty);
+  rpc SetProgressBar(ProgressBar) returns (google.protobuf.Empty);
+  rpc SetTrafficLightPosition(TrafficLightPos) returns (google.protobuf.Empty);
+  rpc SetVibrancy(VibrancyConfig) returns (google.protobuf.Empty);
+  rpc SetDarkMode(DarkModeConfig) returns (google.protobuf.Empty);
+  rpc SetWindowControlsColor(google.protobuf.StringValue) returns (google.protobuf.Empty);
+  rpc Reload(google.protobuf.Empty) returns (google.protobuf.Empty);
+  rpc OpenDevTools(google.protobuf.Empty) returns (google.protobuf.Empty);
+  rpc ToggleFullscreen(google.protobuf.Empty) returns (google.protobuf.Empty);
+  rpc OnShown(google.protobuf.Empty) returns (stream google.protobuf.Empty);
+  rpc OnMoved(google.protobuf.Empty) returns (stream google.protobuf.Empty);
+  rpc OnFocused(google.protobuf.Empty) returns (stream google.protobuf.Empty);
+  rpc OnEnterFullScreen(google.protobuf.Empty) returns (stream google.protobuf.Empty);
+  rpc OnLeaveFullScreen(google.protobuf.Empty) returns (stream google.protobuf.Empty);
+  rpc OnMaximized(google.protobuf.Empty) returns (stream google.protobuf.Empty);
+  rpc OnUnmaximized(google.protobuf.Empty) returns (stream google.protobuf.Empty);
+  rpc OnCloseRequest(google.protobuf.Empty) returns (stream google.protobuf.Empty);
+  rpc OnBecameMainWindow(google.protobuf.Empty) returns (stream google.protobuf.Empty);
+}

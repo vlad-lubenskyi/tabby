@@ -1,0 +1,16 @@
+syntax = "proto3";
+import "google/protobuf/empty.proto";
+
+message DisplayRect { int32 x = 1; int32 y = 2; int32 width = 3; int32 height = 4; }
+message DisplayInfo { int32 id = 1; DisplayRect bounds = 2; DisplayRect work_area = 3; double scale_factor = 4; bool is_primary = 5; }
+message DisplayList { repeated DisplayInfo displays = 1; }
+message Point { int32 x = 1; int32 y = 2; }
+
+service ScreenService {
+  rpc GetAllDisplays(google.protobuf.Empty) returns (DisplayList);
+  rpc GetPrimaryDisplay(google.protobuf.Empty) returns (DisplayInfo);
+  rpc GetDisplayNearestPoint(Point) returns (DisplayInfo);
+  rpc GetCursorPoint(google.protobuf.Empty) returns (Point);
+  rpc OnDisplaysChanged(google.protobuf.Empty) returns (stream DisplayList);
+  rpc OnDisplayMetricsChanged(google.protobuf.Empty) returns (stream DisplayInfo);
+}

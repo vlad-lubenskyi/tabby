@@ -1,0 +1,46 @@
+syntax = "proto3";
+import "google/protobuf/empty.proto";
+import "google/protobuf/wrappers.proto";
+
+message BootstrapData {
+  string app_version = 1;
+  string app_path = 2;
+  string user_data_path = 3;
+  string exe_path = 4;
+  string platform = 5;
+  string arch = 6;
+  string os_release = 7;
+  string path_sep = 8;
+  string posix_path_sep = 9;
+  bool dev_mode = 10;
+  string resources_path = 11;
+  string user_plugins_path = 12;
+  repeated string installed_plugins = 13;
+  map<string, string> env = 14;
+}
+
+message ConfigPayload { bytes data = 1; }
+message CliArgs { repeated string args = 1; }
+message ErrorInfo { string message = 1; string stack = 2; }
+message GetPathRequest { string name = 1; }
+message JumpListRequest { bytes data = 1; }
+message GlobalHotkeyRequest { string accelerator = 1; bool register = 2; }
+message PluginRequest { string name = 1; string version = 2; }
+
+service AppService {
+  rpc GetBootstrapData(google.protobuf.Empty) returns (BootstrapData);
+  rpc GetPath(GetPathRequest) returns (google.protobuf.StringValue);
+  rpc Relaunch(google.protobuf.Empty) returns (google.protobuf.Empty);
+  rpc Exit(google.protobuf.Empty) returns (google.protobuf.Empty);
+  rpc Quit(google.protobuf.Empty) returns (google.protobuf.Empty);
+  rpc SetJumpList(JumpListRequest) returns (google.protobuf.Empty);
+  rpc SaveConfig(ConfigPayload) returns (google.protobuf.Empty);
+  rpc RegisterGlobalHotkey(GlobalHotkeyRequest) returns (google.protobuf.Empty);
+  rpc NewWindow(google.protobuf.Empty) returns (google.protobuf.Empty);
+  rpc InstallPlugin(PluginRequest) returns (google.protobuf.Empty);
+  rpc UninstallPlugin(PluginRequest) returns (google.protobuf.Empty);
+  rpc OnConfigChange(google.protobuf.Empty) returns (stream ConfigPayload);
+  rpc OnCliInvocation(google.protobuf.Empty) returns (stream CliArgs);
+  rpc OnUncaughtException(google.protobuf.Empty) returns (stream ErrorInfo);
+  rpc OnPreferencesRequested(google.protobuf.Empty) returns (stream google.protobuf.Empty);
+}

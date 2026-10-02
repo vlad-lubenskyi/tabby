@@ -1,0 +1,9 @@
+syntax = "proto3";
+import "google/protobuf/empty.proto";
+
+message NativeTheme { bool should_use_dark_colors = 1; bool is_high_contrast = 2; bool is_inverted_color_scheme = 3; }
+
+service ThemeService {
+  rpc GetNativeTheme(google.protobuf.Empty) returns (NativeTheme);
+  rpc OnNativeThemeUpdated(google.protobuf.Empty) returns (stream NativeTheme);
+}

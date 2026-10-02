@@ -1,4 +1,3 @@
-import * as keytar from 'keytar'
 import { Injectable } from '@angular/core'
 import { VaultService } from 'tabby-core'
 import { SSHProfile } from '../api'
@@ -20,7 +19,7 @@ export class PasswordStorageService {
                 return
             }
             const key = this.getKeytarKeyForConnection(profile)
-            return keytar.setPassword(key, account, password)
+            return (window as any).tabbyAPI.ipc.invoke('keytar:set-password', key, account, password)
         }
     }
 
@@ -34,7 +33,7 @@ export class PasswordStorageService {
                 return
             }
             const key = this.getKeytarKeyForConnection(profile)
-            await keytar.deletePassword(key, account)
+            await (window as any).tabbyAPI.ipc.invoke('keytar:delete-password', key, account)
         }
     }
 
@@ -49,7 +48,7 @@ export class PasswordStorageService {
             }
             const key = this.getKeytarKeyForConnection(profile)
             try {
-                return await keytar.getPassword(key, account)
+                return await (window as any).tabbyAPI.ipc.invoke('keytar:get-password', key, account)
             } catch (e) {
                 console.warn(`Failed to load stored password for ${account}@${profile.options.host}:${profile.options.port ?? 22}`, e)
                 return null
@@ -63,7 +62,7 @@ export class PasswordStorageService {
             this.vault.addSecret({ type: VAULT_SECRET_TYPE_PASSPHRASE, key, value: password })
         } else {
             const key = this.getKeytarKeyForPrivateKey(id)
-            return keytar.setPassword(key, 'user', password)
+            return (window as any).tabbyAPI.ipc.invoke('keytar:set-password', key, 'user', password)
         }
     }
 
@@ -73,7 +72,7 @@ export class PasswordStorageService {
             this.vault.removeSecret(VAULT_SECRET_TYPE_PASSPHRASE, key)
         } else {
             const key = this.getKeytarKeyForPrivateKey(id)
-            await keytar.deletePassword(key, 'user')
+            await (window as any).tabbyAPI.ipc.invoke('keytar:delete-password', key, 'user')
         }
     }
 
@@ -83,7 +82,7 @@ export class PasswordStorageService {
             return (await this.vault.getSecret(VAULT_SECRET_TYPE_PASSPHRASE, key))?.value ?? null
         } else {
             const key = this.getKeytarKeyForPrivateKey(id)
-            return keytar.getPassword(key, 'user')
+            return (window as any).tabbyAPI.ipc.invoke('keytar:get-password', key, 'user')
         }
     }
 

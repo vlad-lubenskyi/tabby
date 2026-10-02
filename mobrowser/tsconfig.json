@@ -1,0 +1,54 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "preserve",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "paths": {
+      "@/*": [
+        "./src/renderer/*",
+        "./src/main/*"
+      ],
+      "tabby-core": ["./src/renderer/packages/tabby-core/index.ts"],
+      "tabby-settings": ["./src/renderer/packages/tabby-settings/index.ts"],
+      "tabby-terminal": ["./src/renderer/packages/tabby-terminal/index.ts"],
+      "tabby-local": ["./src/renderer/packages/tabby-local/index.ts"],
+      "tabby-ssh": ["./src/renderer/packages/tabby-ssh/index.ts"],
+      "tabby-serial": ["./src/renderer/packages/tabby-serial/index.ts"],
+      "tabby-telnet": ["./src/renderer/packages/tabby-telnet/index.ts"],
+      "tabby-plugin-manager": ["./src/renderer/packages/tabby-plugin-manager/index.ts"],
+      "tabby-linkifier": ["./src/renderer/packages/tabby-linkifier/index.ts"],
+      "tabby-community-color-schemes": ["./src/renderer/packages/tabby-community-color-schemes/index.ts"],
+      "tabby-mobrowser": ["./src/renderer/packages/tabby-mobrowser/index.ts"],
+      "@gen/*": ["./src/renderer/gen/*"]
+    }
+  },
+  "include": [
+    "src/main",
+    "src/renderer"
+  ],
+  "references": [
+    {
+      "path": "./tsconfig.node.json"
+    }
+  ]
+}

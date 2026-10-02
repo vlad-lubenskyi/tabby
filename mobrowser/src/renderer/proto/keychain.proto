@@ -1,0 +1,13 @@
+syntax = "proto3";
+import "google/protobuf/empty.proto";
+import "google/protobuf/wrappers.proto";
+
+message KeychainGetRequest    { string service = 1; string account = 2; }
+message KeychainSetRequest    { string service = 1; string account = 2; string password = 3; }
+message KeychainDeleteRequest { string service = 1; string account = 2; }
+
+service KeychainService {
+    rpc GetPassword(KeychainGetRequest)    returns (google.protobuf.StringValue);
+    rpc SetPassword(KeychainSetRequest)    returns (google.protobuf.Empty);
+    rpc DeletePassword(KeychainDeleteRequest) returns (google.protobuf.Empty);
+}

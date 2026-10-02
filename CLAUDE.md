@@ -36,3 +36,27 @@ Do not duplicate existing entries — scan `.claude/gotchas.md` before appending
 - Agents must write both files **before** reporting task completion to the user.
 - If an agent is interrupted or produces a partial result, it must still write whatever it knows to both files.
 - Entries are append-only — never delete or edit existing entries, only add new ones.
+
+## Subproject: MoBrowser
+
+The `mobrowser/` directory is an independent subproject with its own rules. Agents working within that directory must read and follow [`mobrowser/AGENTS.md`](mobrowser/AGENTS.md) in addition to this file.
+
+## Browser-only renderer migration journal
+
+All agents working in this repository must update
+`docs/technical/browser-only-renderer-migration-log.md` as the work progresses.
+
+- Record conceptual or architectural changes, newly discovered coupling,
+  compatibility constraints, rejected approaches, and implementation gotchas
+  immediately when they are discovered or decided.
+- Do not defer or batch these notes until the task or migration is finished.
+- Include the date, affected area, the observation or decision, and its
+  consequence or required follow-up.
+- Keep the journal focused on information that a later implementer would not
+  reliably infer from the final code or commit diff.
+
+## Canonical technical documentation
+
+Engineer-facing documentation is organized under [`docs/technical/index.md`](docs/technical/index.md).
+The `.claude` activity and gotcha files are append-only operational inputs; extract durable guidance
+into the indexed technical documents rather than treating the raw agent logs as the canonical manual.

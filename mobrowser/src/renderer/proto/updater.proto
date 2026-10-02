@@ -1,0 +1,14 @@
+syntax = "proto3";
+import "google/protobuf/empty.proto";
+
+message UpdateInfo { string version = 1; string release_notes = 2; }
+message UpdateError { string message = 1; }
+
+service UpdaterService {
+  rpc CheckForUpdates(google.protobuf.Empty) returns (google.protobuf.Empty);
+  rpc QuitAndInstall(google.protobuf.Empty) returns (google.protobuf.Empty);
+  rpc OnUpdateAvailable(google.protobuf.Empty) returns (stream UpdateInfo);
+  rpc OnUpdateNotAvailable(google.protobuf.Empty) returns (stream google.protobuf.Empty);
+  rpc OnUpdateDownloaded(google.protobuf.Empty) returns (stream UpdateInfo);
+  rpc OnUpdateError(google.protobuf.Empty) returns (stream UpdateError);
+}

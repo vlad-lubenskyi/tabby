@@ -1,0 +1,8 @@
+syntax = "proto3";
+import "google/protobuf/empty.proto";
+
+message LogRequest { string level = 1; string message = 2; }
+
+service LogService {
+  rpc Log(LogRequest) returns (google.protobuf.Empty);
+}

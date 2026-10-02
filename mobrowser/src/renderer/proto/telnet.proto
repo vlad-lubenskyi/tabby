@@ -1,0 +1,24 @@
+syntax = "proto3";
+import "google/protobuf/empty.proto";
+
+message TelnetConnectRequest {
+  string session_id = 1;
+  string host = 2;
+  int32 port = 3;
+}
+
+message TelnetSessionId { string session_id = 1; }
+message TelnetWriteRequest { string session_id = 1; bytes data = 2; }
+
+message TelnetEvent {
+  bytes data = 1;
+  bool connected = 2;
+  bool closed = 3;
+  string error = 4;
+}
+
+service TelnetService {
+  rpc Connect(TelnetConnectRequest) returns (stream TelnetEvent);
+  rpc Write(TelnetWriteRequest) returns (google.protobuf.Empty);
+  rpc Destroy(TelnetSessionId) returns (google.protobuf.Empty);
+}

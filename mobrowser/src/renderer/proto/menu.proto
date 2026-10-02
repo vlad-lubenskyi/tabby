@@ -1,0 +1,21 @@
+syntax = "proto3";
+import "google/protobuf/empty.proto";
+
+message MenuItemDefinition {
+  string id = 1;
+  string label = 2;
+  bool enabled = 3;
+  bool checked = 4;
+  string type = 5;
+  repeated MenuItemDefinition submenu = 6;
+}
+
+message ShowContextMenuRequest { repeated MenuItemDefinition items = 1; }
+message MenuClickEvent { string item_id = 1; }
+
+message DockMenuRequest { repeated MenuItemDefinition items = 1; }
+
+service MenuService {
+  rpc ShowContextMenu(ShowContextMenuRequest) returns (stream MenuClickEvent);
+  rpc SetDockMenu(DockMenuRequest) returns (google.protobuf.Empty);
+}
